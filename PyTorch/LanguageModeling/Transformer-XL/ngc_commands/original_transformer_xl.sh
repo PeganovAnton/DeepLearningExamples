@@ -1,5 +1,6 @@
 cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && pip install -r requirements.txt \
+  && pip install --no-cache-dir git+https://github.com/NVIDIA/dllogger.git#egg=dllogger \
   && mkdir -p data \
   && cd data \
   && wget --continue https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip \
@@ -9,8 +10,6 @@ cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && mv wiki.valid.tokens valid.txt \
   && mv wiki.test.tokens test.txt \
   && cd ../.. \
-  && bash pytorch/scripts/docker/build.sh \
-  && bash pytorch/scripts/docker/interactive.sh \
   && cd pytorch \
   && bash run_wt103_base.sh train 8 --config dgx1_8gpu_fp16  
 
