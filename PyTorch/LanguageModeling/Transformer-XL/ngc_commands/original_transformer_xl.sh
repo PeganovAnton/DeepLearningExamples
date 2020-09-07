@@ -1,4 +1,4 @@
-cd DeepLearningExamples/PyTorch/Transformer-XL \
+cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && pip install -r requirements.txt \
   && mkdir -p data \
   && cd data \

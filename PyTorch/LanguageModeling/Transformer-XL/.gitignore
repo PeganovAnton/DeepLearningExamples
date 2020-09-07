@@ -4,4 +4,3 @@ data/
 results/
 *.out
 *.log
-*.json
