@@ -9,6 +9,8 @@ cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && mv wiki.valid.tokens valid.txt \
   && mv wiki.test.tokens test.txt \
   && cd ../.. \
+  && bash pytorch/scripts/docker/build.sh \
+  && bash pytorch/scripts/docker/interactive.sh \
   && cd pytorch \
   && bash run_wt103_base.sh train 8 --config dgx1_8gpu_fp16  
 
