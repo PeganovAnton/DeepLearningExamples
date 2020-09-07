@@ -115,6 +115,12 @@ def parse_args():
                          help='Type of vocabulary')
 
     model = parser.add_argument_group('model setup')
+    model.add_argument('--num_mem_tokens', type=int, default=0,
+                       help="Number of mem tokens prepended to the input data."
+                            "This version of mem tokens does not include saving "
+                            "mem tokens after each run of the model and using "
+                            "contextual embeddings of mem tokens. In fact, mem tokens"
+                            "are just as not zeroed padding.")
     model.add_argument('--n_layer', type=int, default=16,
                        help='Number of total layers')
     model.add_argument('--n_head', type=int, default=8,

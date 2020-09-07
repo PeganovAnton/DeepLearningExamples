@@ -512,7 +512,7 @@ class AdaptiveEmbedding(nn.Module):
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
-                 dropout, dropatt, dtype, tie_weight=True, d_embed=None,
+                 dropout, dropatt, dtype, num_mem_tokens=0, tie_weight=True, d_embed=None,
                  div_val=1, tie_projs=[False], pre_lnorm=False,
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
@@ -527,7 +527,9 @@ class MemTransformerLM(nn.Module):
         self.n_head = n_head
         self.d_head = d_head
 
-        self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
+        self.num_mem_tokens = num_mem_tokens
+
+        self.word_emb = AdaptiveEmbedding(n_token+1, d_embed, d_model, cutoffs,
                                           div_val=div_val)
 
         self.drop = nn.Dropout(dropout)
@@ -769,6 +771,10 @@ class MemTransformerLM(nn.Module):
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
+        seq_len, bsz = data.shape
+        mem_tokens = torch.full(
+            (self.num_mem_tokens, bsz), self.n_token, device=data.device, dtype=data.dtype)
+        data = torch.cat((mem_tokens, data), 0)
         if mems is None:
             mems = self.init_mems()
 
