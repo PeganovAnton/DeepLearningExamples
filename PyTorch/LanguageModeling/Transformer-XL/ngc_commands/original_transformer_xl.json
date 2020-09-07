@@ -3,7 +3,7 @@
    "aceName": "nv-us-west-2",
    "command": "git clone https://github.com/PeganovAnton/DeepLearningExamples.git && source DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_commands/original_transformer_xl.sh",
    "dockerImageName": "nvidia/pytorch:20.03-py3",
-   "name": "ogiginal-transformer-xl-from-nvidia",
+   "name": "original-transformer-xl-from-nvidia",
    "publishedContainerPorts": [
      6006
    ],
