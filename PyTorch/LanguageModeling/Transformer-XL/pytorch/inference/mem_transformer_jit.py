@@ -728,7 +728,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-
+    parser.add_argument('--num_mem_tokens', type=int, default=0)
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -760,15 +760,14 @@ if __name__ == '__main__':
 
     for div_val in [1, 2]:
         for d_embed in [200, 100]:
-            model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
-                                     args.d_model, args.d_head, args.d_inner,
-                                     args.dropout, dropatt=args.dropout,
-                                     tie_weight=True, d_embed=d_embed,
-                                     div_val=div_val, tie_projs=tie_projs,
-                                     pre_lnorm=True, tgt_len=tgt_len,
-                                     ext_len=ext_len, mem_len=mem_len,
-                                     cutoffs=cutoffs, attn_type=0,
-                                     dtype=torch.float32).to(device)
+            model = MemTransformerLM(
+                args.n_token, args.n_layer, args.n_head, args.d_model, 
+                args.d_head, args.d_inner, args.dropout,
+                num_mem_tokens=args.num_mem_tokens, dropatt=args.dropout,
+                tie_weight=True, d_embed=d_embed, div_val=div_val, 
+                tie_projs=tie_projs, pre_lnorm=True, tgt_len=tgt_len,
+                ext_len=ext_len, mem_len=mem_len, cutoffs=cutoffs, attn_type=0,
+                dtype=torch.float32).to(device)
 
             print(sum(p.numel() for p in model.parameters()))
 

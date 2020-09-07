@@ -798,7 +798,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-
+    parser.add_argument('--num_mem_tokens', type=int, default=0, help='')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
