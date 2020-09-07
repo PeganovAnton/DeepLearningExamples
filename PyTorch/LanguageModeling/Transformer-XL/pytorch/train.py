@@ -701,6 +701,7 @@ def main():
     # Build the model
     ###########################################################################
     model_config = {
+        'num_mem_tokens': args.num_mem_tokens,
         'n_token': ntokens,
         'n_layer': args.n_layer,
         'n_head': args.n_head,
