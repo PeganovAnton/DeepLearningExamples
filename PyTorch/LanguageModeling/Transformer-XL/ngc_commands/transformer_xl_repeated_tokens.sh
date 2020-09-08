@@ -1,4 +1,4 @@
-cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
+cd PyTorch/LanguageModeling/Transformer-XL \
   && pip install -r requirements.txt \
   && pip install --no-cache-dir git+https://github.com/NVIDIA/dllogger.git#egg=dllogger \
   && mkdir -p data \
@@ -11,5 +11,5 @@ cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && mv wiki.test.tokens test.txt \
   && cd ../.. \
   && cd pytorch \
-  && bash run_wt103_base.sh train 8 --config dgx1_8gpu_fp16 --work_dir /result 
+  && bash run_wt103_base_repeat_tokens.sh train 8 --config dgx1_8gpu_fp16 --work_dir /result 
 

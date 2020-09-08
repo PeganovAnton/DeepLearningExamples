@@ -4,3 +4,4 @@ data/
 results/
 *.out
 *.log
+**/LM-TFM/

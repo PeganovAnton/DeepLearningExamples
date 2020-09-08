@@ -512,7 +512,7 @@ class AdaptiveEmbedding(nn.Module):
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
-                 dropout, dropatt, dtype, tie_weight=True, d_embed=None,
+                 dropout, dropatt, dtype, num_repeated_tokens=0, tie_weight=True, d_embed=None,
                  div_val=1, tie_projs=[False], pre_lnorm=False,
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
@@ -526,6 +526,8 @@ class MemTransformerLM(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
         self.d_head = d_head
+
+        self.num_repeated_tokens = num_repeated_tokens
 
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
                                           div_val=div_val)
@@ -764,11 +766,13 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems
 
-    def forward(self, data, target, mems):
+    def forward(self, data, target, mems, repeated_tokens=None):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
+        if repeated_tokens is not None:
+            data = torch.cat((repeated_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()
 
@@ -785,14 +789,17 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 
-        return (loss, new_mems)
+        return loss, new_mems, \
+               data[-self.num_repeated_tokens:] if self.num_repeated_tokens > 0 else None
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-
+    parser.add_argument('--num_repeated_tokens', type=int, default=0,
+                       help='Number of last tokens from the last segment '
+                            'that are passed to model with current segment.')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -806,6 +813,8 @@ if __name__ == '__main__':
     parser.add_argument('--multi_gpu', action='store_true', help='')
 
     args = parser.parse_args()
+    if args.seed == -1:
+        args.seed = None
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -826,7 +835,7 @@ if __name__ == '__main__':
         for d_embed in [200, 100]:
             model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
                                      args.d_model, args.d_head, args.d_inner,
-                                     args.dropout, dropatt=args.dropout,
+                                     args.dropout, num_repeated_tokens=args.num_repeated_tokens, dropatt=args.dropout,
                                      tie_weight=True, d_embed=d_embed,
                                      div_val=div_val, tie_projs=tie_projs,
                                      pre_lnorm=True, tgt_len=tgt_len,

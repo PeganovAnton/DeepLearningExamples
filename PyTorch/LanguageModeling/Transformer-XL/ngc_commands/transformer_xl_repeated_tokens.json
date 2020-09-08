@@ -1,7 +1,7 @@
 {
    "aceInstance": "dgx1v.16g.8.norm",
    "aceName": "nv-us-west-2",
-   "command": "git clone https://github.com/PeganovAnton/DeepLearningExamples.git && source DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_commands/original_transformer_xl.sh",
+   "command": "git clone https://github.com/PeganovAnton/DeepLearningExamples.git && cd DeepLearningExamples && git checkout prev_tokens_instead_of_mem && source DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_commands/transformer_xl_repeated_tokens.sh",
    "dockerImageName": "nvidia/pytorch:20.03-py3",
    "name": "original-transformer-xl-from-nvidia",
    "publishedContainerPorts": [

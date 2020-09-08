@@ -135,6 +135,8 @@ def parse_args():
         args.batch_size = 1
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
+    if args.seed == -1:
+        args.seed = None
     return args
 
 
@@ -167,6 +169,7 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
     start_time = time.time()
     with torch.no_grad():
         mems = None
+        repeated_tokens = None
         for _ in range(repeat):
             for idx, (data, target, seq_len, warm) in enumerate(eval_iter):
                 if max_size and idx >= max_size:
@@ -175,7 +178,7 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
 
                 torch.cuda.synchronize()
                 start_iter = time.time()
-                loss, mems = model(data, target, mems)
+                loss, mems, repeated_tokens = model(data, target, mems, repeated_tokens)
                 torch.cuda.synchronize()
                 elapsed = time.time() - start_iter
 

@@ -11,5 +11,9 @@ cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
   && mv wiki.test.tokens test.txt \
   && cd ../.. \
   && cd pytorch \
-  && bash run_wt103_base.sh train 8 --config dgx1_8gpu_fp16 --work_dir /result 
+  && for i in {1..5}; do 
+       bash run_wt103_base.sh train 8 --config dgx1_8gpu_fp16 \
+         --work_dir /result/repeat${i} \
+         --seed ${i}
+     done
 
