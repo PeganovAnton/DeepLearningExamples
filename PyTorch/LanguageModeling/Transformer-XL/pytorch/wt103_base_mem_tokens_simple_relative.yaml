@@ -6,7 +6,7 @@ wt103: &wt103
 train: &train
    <<: *wt103
    cuda: true
-   num_mem_tokens: 10
+   num_mem_tokens: 32
    n_layer: 16
    d_model: 512
    n_head: 8
@@ -21,7 +21,7 @@ train: &train
    warmup_step: 1000
    max_step: 40000
    tgt_len: 192
-   mem_len: 192
+   mem_len: 224
    eval_tgt_len: 192
    batch_size: 256
    multi_gpu: ddp
