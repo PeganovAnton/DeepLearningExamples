@@ -15,5 +15,6 @@ cd PyTorch/LanguageModeling/Transformer-XL \
        bash run_wt103_base_mem_tokens_simple_relative.sh train 8 \
          --config dgx1_8gpu_fp16 \
          --num_mem_tokens ${nmt} \
-         --mem_len "$(expr 192 + ${nmt})" 
+         --mem_len "$(expr 192 + ${nmt})" \
+         --work_dir /result/nmt_${nmt}
      done  
