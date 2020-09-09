@@ -760,8 +760,6 @@ class MemTransformerLM(nn.Module):
                 core_out = layer(core_out, dec_attn_mask=dec_attn_mask,
                                  mems=mems_i)
                 hids.append(core_out.detach())
-        for i, hid in enumerate(hids):
-            print(f"(_forward)hids[{i}].shape:", hid.shape)
         core_out = self.drop(core_out)
 
         new_mems = self._update_mems(hids, mems, qlen, mlen)
