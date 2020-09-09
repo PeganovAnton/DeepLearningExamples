@@ -712,7 +712,11 @@ class MemTransformerLM(nn.Module):
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
         if self.num_mem_tokens > 0:
-            mem_tokens = torch.full((self.num_mem_tokens, data.shape[-1]), self.n_token)
+            mem_tokens = torch.full(
+                (self.num_mem_tokens, data.shape[-1]), 
+                self.n_token, 
+                dtype=data.dtype, 
+                device=data.device)
             data = torch.cat((mem_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()

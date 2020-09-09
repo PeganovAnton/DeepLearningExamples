@@ -669,7 +669,6 @@ class MemTransformerLM(nn.Module):
         return new_mems
 
     def _forward(self, dec_inp, mems=None):
-        print("(_forward)dec_inp.shape:", dec_inp.shape)
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
@@ -776,7 +775,11 @@ class MemTransformerLM(nn.Module):
         # them together.
         
         if self.num_mem_tokens > 0:
-            mem_tokens = torch.full((self.num_mem_tokens, data.shape[-1]), self.n_token)
+            mem_tokens = torch.full(
+                (self.num_mem_tokens, data.shape[-1]), 
+                self.n_token, 
+                dtype=data.dtype, 
+                device=data.device)
             data = torch.cat((mem_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()
