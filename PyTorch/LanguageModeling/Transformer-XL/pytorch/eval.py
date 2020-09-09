@@ -135,6 +135,8 @@ def parse_args():
         args.batch_size = 1
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
+    if args.seed == -1:
+        args.seed = None
     return args
 
 

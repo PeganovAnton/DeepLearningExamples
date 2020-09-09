@@ -116,11 +116,8 @@ def parse_args():
 
     model = parser.add_argument_group('model setup')
     model.add_argument('--num_mem_tokens', type=int, default=0,
-                       help="Number of mem tokens prepended to the input data."
-                            "This version of mem tokens does not include saving "
-                            "mem tokens after each run of the model and using "
-                            "contextual embeddings of mem tokens. In fact, mem tokens"
-                            "are just as not zeroed padding.")
+                       help='Number of mem tokens inserted between '
+                            'previous and current segments')
     model.add_argument('--n_layer', type=int, default=16,
                        help='Number of total layers')
     model.add_argument('--n_head', type=int, default=8,
@@ -252,7 +249,9 @@ def parse_args():
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
     assert args.batch_size % args.batch_chunk == 0
-
+    if args.seed == -1:
+        args.seed = None
+    print("args.work_dir:", args.work_dir)
     return args
 
 

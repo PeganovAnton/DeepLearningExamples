@@ -545,7 +545,7 @@ class AdaptiveEmbedding(nn.Module):
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
-                 dropout, dropatt, dtype, tie_weight=True, d_embed=None,
+                 dropout, dropatt, dtype, num_mem_tokens=0, tie_weight=True, d_embed=None,
                  div_val=1, tie_projs=[False], pre_lnorm=False,
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
@@ -560,7 +560,7 @@ class MemTransformerLM(nn.Module):
         self.n_head = n_head
         self.d_head = d_head
         self.dtype = dtype
-
+        self.num_mem_tokens = num_mem_tokens
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
                                           div_val=div_val, dtype=dtype)
 
@@ -711,6 +711,9 @@ class MemTransformerLM(nn.Module):
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
+        if self.num_mem_tokens > 0:
+            mem_tokens = torch.full((self.num_mem_tokens, data.shape[-1]), self.n_token)
+            data = torch.cat((mem_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()
 
@@ -721,14 +724,16 @@ class MemTransformerLM(nn.Module):
         loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
         loss = loss.view(tgt_len, -1)
 
-        return (loss, new_mems)
+        return loss, new_mems
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-    parser.add_argument('--num_mem_tokens', type=int, default=0)
+    parser.add_argument('--num_mem_tokens', type=int, default=0,
+                       help='Number of mem tokens inserted between '
+                            'previous and current segments')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -740,8 +745,9 @@ if __name__ == '__main__':
     parser.add_argument('--cuda', action='store_true', help='')
     parser.add_argument('--seed', type=int, default=1111, help='')
     parser.add_argument('--multi_gpu', action='store_true', help='')
-
     args = parser.parse_args()
+    if args.seed == -1:
+        args.seed = None
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -760,14 +766,15 @@ if __name__ == '__main__':
 
     for div_val in [1, 2]:
         for d_embed in [200, 100]:
-            model = MemTransformerLM(
-                args.n_token, args.n_layer, args.n_head, args.d_model, 
-                args.d_head, args.d_inner, args.dropout,
-                num_mem_tokens=args.num_mem_tokens, dropatt=args.dropout,
-                tie_weight=True, d_embed=d_embed, div_val=div_val, 
-                tie_projs=tie_projs, pre_lnorm=True, tgt_len=tgt_len,
-                ext_len=ext_len, mem_len=mem_len, cutoffs=cutoffs, attn_type=0,
-                dtype=torch.float32).to(device)
+            model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
+                                     args.d_model, args.d_head, args.d_inner,
+                                     args.dropout, num_mem_tokens=args.num_mem_tokens, dropatt=args.dropout,
+                                     tie_weight=True, d_embed=d_embed,
+                                     div_val=div_val, tie_projs=tie_projs,
+                                     pre_lnorm=True, tgt_len=tgt_len,
+                                     ext_len=ext_len, mem_len=mem_len,
+                                     cutoffs=cutoffs, attn_type=0,
+                                     dtype=torch.float32).to(device)
 
             print(sum(p.numel() for p in model.parameters()))
 

@@ -518,6 +518,7 @@ class MemTransformerLM(nn.Module):
                  cutoffs=[], adapt_inp=False,
                  same_length=False, attn_type=0, clamp_len=-1,
                  sample_softmax=-1):
+        print("(MemTransformerLM.__init__)mem_len, num_mem_tokens:", mem_len, num_mem_tokens)
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
 
@@ -668,6 +669,7 @@ class MemTransformerLM(nn.Module):
         return new_mems
 
     def _forward(self, dec_inp, mems=None):
+        print("(_forward)dec_inp.shape:", dec_inp.shape)
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
@@ -759,7 +761,8 @@ class MemTransformerLM(nn.Module):
                 core_out = layer(core_out, dec_attn_mask=dec_attn_mask,
                                  mems=mems_i)
                 hids.append(core_out.detach())
-
+        for i, hid in enumerate(hids):
+            print(f"(_forward)hids[{i}].shape:", hid.shape)
         core_out = self.drop(core_out)
 
         new_mems = self._update_mems(hids, mems, qlen, mlen)
@@ -771,10 +774,10 @@ class MemTransformerLM(nn.Module):
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
-        seq_len, bsz = data.shape
-        mem_tokens = torch.full(
-            (self.num_mem_tokens, bsz), self.n_token, device=data.device, dtype=data.dtype)
-        data = torch.cat((mem_tokens, data), 0)
+        
+        if self.num_mem_tokens > 0:
+            mem_tokens = torch.full((self.num_mem_tokens, data.shape[-1]), self.n_token)
+            data = torch.cat((mem_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()
 
@@ -791,14 +794,16 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 
-        return (loss, new_mems)
+        return loss, new_mems
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-    parser.add_argument('--num_mem_tokens', type=int, default=0, help='')
+    parser.add_argument('--num_mem_tokens', type=int, default=0,
+                       help='Number of last tokens from the last segment '
+                            'that are passed to model with current segment.')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -812,6 +817,8 @@ if __name__ == '__main__':
     parser.add_argument('--multi_gpu', action='store_true', help='')
 
     args = parser.parse_args()
+    if args.seed == -1:
+        args.seed = None
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -830,14 +837,15 @@ if __name__ == '__main__':
 
     for div_val in [1, 2]:
         for d_embed in [200, 100]:
-            model = MemTransformerLM(
-                args.n_token, args.n_layer, args.n_head, args.d_model, 
-                args.d_head, args.d_inner, args.dropout, 
-                num_mem_tokens=args.num_mem_tokens, dropatt=args.dropout,
-                tie_weight=True, d_embed=d_embed, div_val=div_val, 
-                tie_projs=tie_projs, pre_lnorm=True, tgt_len=tgt_len,
-                ext_len=ext_len, mem_len=mem_len, cutoffs=cutoffs, 
-                attn_type=0, dtype=None).to(device)
+            model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
+                                     args.d_model, args.d_head, args.d_inner,
+                                     args.dropout, num_mem_tokens=args.num_mem_tokens, dropatt=args.dropout,
+                                     tie_weight=True, d_embed=d_embed,
+                                     div_val=div_val, tie_projs=tie_projs,
+                                     pre_lnorm=True, tgt_len=tgt_len,
+                                     ext_len=ext_len, mem_len=mem_len,
+                                     cutoffs=cutoffs, attn_type=0,
+                                     dtype=None).to(device)
 
             print(sum(p.numel() for p in model.parameters()))
 
