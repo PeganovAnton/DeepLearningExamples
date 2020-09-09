@@ -1,0 +1,1 @@
+bash run_debug_wt103_base_mem_tokens_simple_relative.sh train 2
