@@ -115,6 +115,9 @@ def parse_args():
                          help='Type of vocabulary')
 
     model = parser.add_argument_group('model setup')
+    model.add_argument('--num_prepended_tokens', default=0, type=int,
+                        help="Number of tokens standing before cached that will be"
+                             "processed.")
     model.add_argument('--n_layer', type=int, default=16,
                        help='Number of total layers')
     model.add_argument('--n_head', type=int, default=8,
@@ -216,8 +219,6 @@ def parse_args():
                           help='Use multiple GPU')
     training.add_argument('--gpu0_bsz', type=int, default=-1,
                           help='Batch size on gpu 0 (for "dp" backend)')
-    training.add_argument('--same_length', action='store_true',
-                          help='Use the same attn length for all tokens')
     training.add_argument('--varlen', action='store_true',
                           help='Use variable length')
 
@@ -695,6 +696,7 @@ def main():
     # Build the model
     ###########################################################################
     model_config = {
+        'num_prepended_tokens': args.num_prepended_tokens,
         'n_token': ntokens,
         'n_layer': args.n_layer,
         'n_head': args.n_head,
@@ -713,7 +715,6 @@ def main():
         'ext_len': args.ext_len,
         'mem_len': args.mem_len,
         'cutoffs': cutoffs,
-        'same_length': args.same_length,
         'attn_type': args.attn_type,
         'clamp_len': args.clamp_len,
         'sample_softmax': args.sample_softmax,

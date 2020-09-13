@@ -227,31 +227,25 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         self.r_net = nn.Linear(self.d_model, self.n_head * self.d_head, bias=False)
 
-    def forward(self, w, r, r_w_bias, r_r_bias, attn_mask=None, mems=None):
+    def forward(self, w, r, r_w_bias, r_r_bias, attn_mask=None, mems=None, prepended_out=None):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
 
-        if mems is not None:
-            cat = torch.cat([mems, w], 0)
-            if self.pre_lnorm:
-                w_heads = self.qkv_net(self.layer_norm(cat))
-            else:
-                w_heads = self.qkv_net(cat)
-            r_head_k = self.r_net(r)
+        cat = w if mems is None else torch.cat([mems, w], dim=0)
+        cat = cat if prepended_out is None else torch.cat([prepended_out, cat], dim=0)
+        w_heads = self.qkv_net(self.layer_norm(cat)) if self.pre_lnorm else self.qkv_net(cat)
+        r_head_k = self.r_net(r)
+        w_head_q, w_head_k, w_head_v = torch.chunk(w_heads, 3, dim=-1)
+        w_head_q_prepended = None if prepended_out is None else w_head_q[:prepended_out.size(0)]
+        w_head_q = torch.cat((w_head_q[:prepended_out.size(0)], w_head_q[-qlen:]), dim=0)
 
-            w_head_q, w_head_k, w_head_v = torch.chunk(w_heads, 3, dim=-1)
-            w_head_q = w_head_q[-qlen:]
-        else:
-            if self.pre_lnorm:
-                w_heads = self.qkv_net(self.layer_norm(w))
-            else:
-                w_heads = self.qkv_net(w)
-            r_head_k = self.r_net(r)
-
-            w_head_q, w_head_k, w_head_v = torch.chunk(w_heads, 3, dim=-1)
 
         klen = w_head_k.size(0)
 
-        w_head_q = w_head_q.view(qlen, bsz, self.n_head, self.d_head)  # qlen x bsz x n_head x d_head
+        w_head_q = w_head_q.view(
+            qlen+(0 if prepended_out is None else prepended_out.size(0)),
+            bsz,
+            self.n_head,
+            self.d_head)  # qlen x bsz x n_head x d_head
         w_head_k = w_head_k.view(klen, bsz, self.n_head, self.d_head)  # klen x bsz x n_head x d_head
         w_head_v = w_head_v.view(klen, bsz, self.n_head, self.d_head)  # klen x bsz x n_head x d_head
 
@@ -262,8 +256,25 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
         AC = torch.einsum('ibnd,jbnd->bnij', (rw_head_q, w_head_k))    # bsz x n_head x qlen x klen
 
         rr_head_q = w_head_q + r_r_bias
-        BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k))     # bsz x n_head x qlen x klen
+        rr_head_q_prepended = None if prepended_out is None else w_head_q_prepended + r_r_bias
+        len_of_keys_for_prepended = prepended_out.size(0) + mems.size(0)
+        r_head_k_for_tgt = r_head_k[len_of_keys_for_prepended:]
+        BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k_for_tgt))     # bsz x n_head x qlen x klen
         BD = self._rel_shift(BD)
+        if prepended_out is not None:
+            r_head_k_for_prepended_forward = r_head_k[:len_of_keys_for_prepended]
+            r_head_k_for_prepended_backward = r_head_k[-prepended_out.size(0):]
+            BD_prepended_forward = torch.einsum(
+                'ibnd,jnd->bnij', (rr_head_q_prepended, r_head_k_for_prepended_forward))
+            BD_prepended_forward = self._res_shift_forward(BD_prepended_forward)
+            BD_prepended_forward.triu_(1)
+            BD_prepended_backward = torch.einsum(
+                'ibnd,jnd->bnij', (rr_head_q_prepended, r_head_k_for_prepended_backward))
+            BD_prepended_backward = self.rel_shift(BD_prepended_backward)
+            BD_prepended_backward.tril_(1)
+            BD_prepended = BD_prepended_backward
+            BD_prepended += BD_prepended_forward
+            BD = torch.cat((BD_prepended, BD), dim=2)
 
         # [bsz x n_head x qlen x klen]
         attn_score = AC + BD
@@ -391,6 +402,7 @@ class RelLearnableMultiHeadAttn(RelMultiHeadAttn):
 
 class DecoderLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, d_inner, dropout, **kwargs):
+        raise NotImplementedError
         super(DecoderLayer, self).__init__()
 
         self.dec_attn = MultiHeadAttn(n_head, d_model, d_head, dropout, **kwargs)
@@ -409,6 +421,7 @@ class DecoderLayer(nn.Module):
 class RelLearnableDecoderLayer(nn.Module):
     def __init__(self, n_head, d_model, d_head, d_inner, dropout,
                  **kwargs):
+        raise NotImplementedError
         super(RelLearnableDecoderLayer, self).__init__()
 
         self.dec_attn = RelLearnableMultiHeadAttn(n_head, d_model, d_head,
@@ -512,11 +525,12 @@ class AdaptiveEmbedding(nn.Module):
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
-                 dropout, dropatt, dtype, tie_weight=True, d_embed=None,
+                 dropout, dropatt, dtype, num_prepended_tokens=0,
+                 tie_weight=True, d_embed=None,
                  div_val=1, tie_projs=[False], pre_lnorm=False,
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
-                 same_length=False, attn_type=0, clamp_len=-1,
+                 attn_type=0, clamp_len=-1,
                  sample_softmax=-1):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
@@ -526,6 +540,10 @@ class MemTransformerLM(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
         self.d_head = d_head
+
+        self.num_prepended_tokens = num_prepended_tokens
+        self.num_cached_tokens = mem_len + tgt_len + ext_len + num_prepended_tokens
+        self.cached_input_tokens = None
 
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
                                           div_val=div_val)
@@ -557,6 +575,7 @@ class MemTransformerLM(nn.Module):
                 )
         # learnable embeddings
         elif attn_type == 1:
+            raise NotImplementedError
             for i in range(n_layer):
                 self.layers.append(
                     RelLearnableDecoderLayer(
@@ -566,6 +585,7 @@ class MemTransformerLM(nn.Module):
                 )
         # absolute embeddings
         elif attn_type in [2, 3]:
+            raise NotImplementedError
             for i in range(n_layer):
                 self.layers.append(
                     DecoderLayer(
@@ -595,8 +615,6 @@ class MemTransformerLM(nn.Module):
                                                     out_projs=emb_projs,
                                                     out_layers_weights=emb_layers)
 
-
-        self.same_length = same_length
         self.clamp_len = clamp_len
 
         self._create_params()
@@ -665,36 +683,44 @@ class MemTransformerLM(nn.Module):
 
         return new_mems
 
-    def _forward(self, dec_inp, mems=None):
+    def _forward(self, dec_inp, mems=None, prepended_tokens=None):
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
+        prepended_emb = self.word_emb(prepended_tokens)
 
         mlen = mems[0].size(0) if mems is not None else 0
         klen = mlen + qlen
-        if self.same_length:
-            all_ones = word_emb.new_ones(qlen, klen)
-            mask_len = klen - self.mem_len - 1
-            if mask_len > 0:
-                mask_shift_len = qlen - mask_len
-            else:
-                mask_shift_len = qlen
-            dec_attn_mask = (torch.triu(all_ones, 1+mlen)
-                             + torch.tril(all_ones, -mask_shift_len)).bool()
-        else:
-            dec_attn_mask = torch.triu(
-                word_emb.new_ones(qlen, klen), diagonal=1+mlen).bool()
+        dec_attn_mask = torch.triu(
+            word_emb.new_ones(qlen, klen+self.num_prepended_tokens),
+            diagonal=1+mlen+self.num_prepended_tokens
+        ).bool()
+        prepended_query_mask = torch.cat(
+            (
+                word_emb.new_zeros(self.num_prepended_tokens, self.num_prepended_tokens + mlen),
+                word_emb.new_ones(self.num_prepended_tokens, qlen)
+            ),
+            dim=1
+        )
+        dec_attn_mask = torch.cat((prepended_query_mask, dec_attn_mask), dim=0)
 
         hids = []
         # default
         if self.attn_type == 0:
-            pos_seq = torch.arange(klen-1, -1, -1.0, device=word_emb.device,
-                                   dtype=word_emb.dtype)
+            pos_seq = torch.arange(
+                klen-1
+                    +self.num_prepended_tokens
+                    +(self.num_prepended_tokens+mem_len),
+                -1,
+                -1.0,
+                device=word_emb.device,
+                dtype=word_emb.dtype)
             if self.clamp_len > 0:
                 pos_seq.clamp_(max=self.clamp_len)
             pos_emb = self.pos_emb(pos_seq)
 
             core_out = self.drop(word_emb)
+            prepended_out = self.drop(prepended_emb)
             pos_emb = self.drop(pos_emb)
 
             hids.append(core_out.detach())
@@ -702,10 +728,13 @@ class MemTransformerLM(nn.Module):
                 mems_i = None if mems is None else mems[i]
                 core_out = layer(core_out, pos_emb, self.r_w_bias,
                                  self.r_r_bias, dec_attn_mask=dec_attn_mask,
-                                 mems=mems_i)
+                                 mems=mems_i, prepended_out=prepended_out)
+                prepended_out = core_out[:self.num_prepended_tokens]
+                core_out = core_out[self.num_prepended_tokens:]
                 hids.append(core_out.detach())
         # learnable
         elif self.attn_type == 1:
+            raise NotImplementedError
             core_out = self.drop(word_emb)
             hids.append(core_out.detach())
             for i, layer in enumerate(self.layers):
@@ -721,6 +750,7 @@ class MemTransformerLM(nn.Module):
                 hids.append(core_out.detach())
         # absolute
         elif self.attn_type == 2:
+            raise NotImplementedError
             pos_seq = torch.arange(klen - 1, -1, -1.0, device=word_emb.device,
                                    dtype=word_emb.dtype)
             if self.clamp_len > 0:
@@ -738,6 +768,7 @@ class MemTransformerLM(nn.Module):
                                  mems=mems_i)
                 hids.append(core_out.detach())
         elif self.attn_type == 3:
+            raise NotImplementedError
             core_out = self.drop(word_emb)
 
             hids.append(core_out.detach())
@@ -773,7 +804,14 @@ class MemTransformerLM(nn.Module):
             mems = self.init_mems()
 
         tgt_len = target.size(0)
-        hidden, new_mems = self._forward(data, mems=mems)
+        if self.cached_input_tokens is not None \
+                and self.cached_input_tokens.shape[0] > self.mem_len:
+            prepended_tokens = self.cached_input_tokens[:-self.mem_len]
+        else:
+            prepended_tokens = None
+
+        hidden, new_mems = self._forward(
+            data, mems=mems, prepended_tokens=prepended_tokens)
 
         pred_hid = hidden[-tgt_len:]
         if self.sample_softmax > 0 and self.training:
@@ -785,6 +823,13 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 
+        if self.num_prepended_tokens is not None and self.num_prependeed_tokens > 0:
+            if self.cached_input_tokens is None:
+                self.cached_input_tokens = data
+            else:
+                self.cached_input_tokens = torch.cat((self.cached_input_tokens, data), dim=0)
+            self.cached_input_tokens = self.cached_input_tokens[-self.num_cached_tokens:]
+
         return (loss, new_mems)
 
 
@@ -793,6 +838,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='unit test')
 
+    parser.add_argument('--num_prepended_tokens', type=int, default=0,
+                        help='Number of tokens prepended to cached hidden '
+                             'states. These tokens are processed as '
+                             'mem-tokens.')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -826,7 +875,9 @@ if __name__ == '__main__':
         for d_embed in [200, 100]:
             model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
                                      args.d_model, args.d_head, args.d_inner,
-                                     args.dropout, dropatt=args.dropout,
+                                     args.dropout,
+                                     num_prepended_tokens=args.num_prepended_tokens,
+                                     dropatt=args.dropout,
                                      tie_weight=True, d_embed=d_embed,
                                      div_val=div_val, tie_projs=tie_projs,
                                      pre_lnorm=True, tgt_len=tgt_len,

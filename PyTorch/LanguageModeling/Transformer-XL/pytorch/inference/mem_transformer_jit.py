@@ -545,12 +545,14 @@ class AdaptiveEmbedding(nn.Module):
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
-                 dropout, dropatt, dtype, tie_weight=True, d_embed=None,
+                 dropout, dropatt, dtype, num_prepended_tokens=0,
+                 tie_weight=True, d_embed=None,
                  div_val=1, tie_projs=[False], pre_lnorm=False,
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
-                 same_length=False, attn_type=0, clamp_len=-1,
+                 attn_type=0, clamp_len=-1,
                  sample_softmax=-1):
+        raise NotImplementedError
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
 
@@ -576,6 +578,11 @@ class MemTransformerLM(nn.Module):
         self.mem_len = mem_len
         self.ext_len = ext_len
         self.max_klen = tgt_len + ext_len + mem_len
+        self.num_prepended_tokens = num_prepended_tokens
+
+        self.num_cached_input_tokens = self.mem_len + self.num_prepended_tokens
+
+        self.cached_input_tokens = None
 
         self.attn_type = attn_type
         if attn_type != 0:
@@ -615,7 +622,6 @@ class MemTransformerLM(nn.Module):
                                                     out_projs=emb_projs,
                                                     out_layers_weights=emb_layers)
 
-        self.same_length = same_length
         self.clamp_len = clamp_len
 
         self._create_params()
@@ -661,7 +667,7 @@ class MemTransformerLM(nn.Module):
 
         return new_mems
 
-    def _forward(self, dec_inp, mems: List[torch.Tensor]):
+    def _forward(self, dec_inp, mems: List[torch.Tensor], prepended_inputs=None):
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
@@ -670,16 +676,7 @@ class MemTransformerLM(nn.Module):
         klen = mlen + qlen
         all_ones = torch.ones((qlen, klen), device=torch.device('cuda'),
                               dtype=self.dtype)
-        if self.same_length:
-            mask_len = klen - self.mem_len
-            if mask_len > 0:
-                mask_shift_len = qlen - mask_len
-            else:
-                mask_shift_len = qlen
-            dec_attn_mask = (torch.triu(all_ones, 1+mlen) +
-                             torch.tril(all_ones, -mask_shift_len)).to(torch.bool)
-        else:
-            dec_attn_mask = torch.triu(all_ones, diagonal=1+mlen).to(torch.bool)
+        dec_attn_mask = torch.triu(all_ones, diagonal=1+mlen).to(torch.bool)
 
         hids = []
         pos_seq = torch.arange(klen-1, -1, -1.0, device=word_emb.device,
@@ -697,7 +694,7 @@ class MemTransformerLM(nn.Module):
             mems_i = None if mems is None else mems[i]
             core_out = layer(core_out, pos_emb, self.r_w_bias,
                              self.r_r_bias, dec_attn_mask=dec_attn_mask,
-                             mems=mems_i)
+                             mems=mems_i, prepended_inputs=prepended_inputs)
             hids.append(core_out)
             i += 1
         core_out = self.drop(core_out)
@@ -715,7 +712,26 @@ class MemTransformerLM(nn.Module):
             mems = self.init_mems()
 
         tgt_len = target.size(0)
-        hidden, new_mems = self._forward(data, mems=mems)
+        if self.cached_input_tokens is not None \
+                and self.cached_input_tokens.shape[0] > self.mem_len:
+            prepended_inputs = self.cached_input_tokens[:-self.mem_len]
+        else:
+            prepended_inputs = None
+
+        hidden, new_mems = self._forward(
+            data, mems=mems, prepended_inputs=prepended_inputs)
+
+        if self.cached_input_tokens is None or data.shape[0] >= self.num_cached_input_tokens:
+            self.cached_input_tokens = data[-self.num_cached_input_tokens:]
+        else:
+            self.cached_input_tokens = torch.cat(
+                (
+                    self.cached_input_tokens[-self.num_cached_input_tokens + data.shape[0]:],
+                    data
+                ),
+                dim=0
+            )
+
 
         pred_hid = hidden[-tgt_len:]
         loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
@@ -728,7 +744,10 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='unit test')
-
+    parser.add_argument('--num_prepended_tokens', type=int, default=0,
+                        help='Number of tokens prepended to cached hidden '
+                             'states. These tokens are processed as '
+                             'mem-tokens.')
     parser.add_argument('--n_layer', type=int, default=4, help='')
     parser.add_argument('--n_rel_layer', type=int, default=4, help='')
     parser.add_argument('--n_head', type=int, default=2, help='')
@@ -762,7 +781,9 @@ if __name__ == '__main__':
         for d_embed in [200, 100]:
             model = MemTransformerLM(args.n_token, args.n_layer, args.n_head,
                                      args.d_model, args.d_head, args.d_inner,
-                                     args.dropout, dropatt=args.dropout,
+                                     args.dropout,
+                                     num_prepended_tokens=args.num_prepended_tokens,
+                                     dropatt=args.dropout,
                                      tie_weight=True, d_embed=d_embed,
                                      div_val=div_val, tie_projs=tie_projs,
                                      pre_lnorm=True, tgt_len=tgt_len,

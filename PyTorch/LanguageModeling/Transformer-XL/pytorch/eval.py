@@ -77,6 +77,9 @@ def parse_args():
                         help='type of runtime to use')
     parser.add_argument('--batch_size', type=int, default=16,
                         help='batch size')
+    parser.add_argument('--num_prepended_tokens', type=int, default=0,
+                        help='Number of tokens before cached which are processed '
+                        'like mem-tokens.')
     parser.add_argument('--tgt_len', type=int, default=64,
                         help='number of tokens to predict')
     parser.add_argument('--ext_len', type=int, default=0,
@@ -345,6 +348,7 @@ def main():
     if args.load_torchscript:
         model = torch.jit.load(args.load_torchscript)
     elif not args.manual_config:
+        checkpoint['model_config']['num_prepended_tokens'] = args.num_prepended_tokens
         checkpoint['model_config']['tgt_len'] = args.tgt_len
         checkpoint['model_config']['ext_len'] = args.ext_len
         checkpoint['model_config']['mem_len'] = args.mem_len
@@ -358,6 +362,7 @@ def main():
         elif args.type == 'torchscript':
             model.load_state_dict(checkpoint['model_state'], strict=False)
     elif args.manual_config:
+        args.manual_config['num_repeated_tokens'] = args.num_prepended_tokens
         args.manual_config['tgt_len'] = args.tgt_len
         args.manual_config['ext_len'] = args.ext_len
         args.manual_config['mem_len'] = args.mem_len
