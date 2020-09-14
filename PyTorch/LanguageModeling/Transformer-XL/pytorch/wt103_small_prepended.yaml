@@ -6,12 +6,12 @@ wt103: &wt103
 train: &train
    <<: *wt103
    cuda: true
-   num_prepended_tokens: 17
+   num_prepended_tokens: 4
    n_layer: 4
-   d_model: 27
+   d_model: 13
    n_head: 7
    d_head: 9
-   d_inner: 139
+   d_inner: 33
    dropout: 0.1
    dropatt: 0.0
    optim: jitlamb
@@ -20,9 +20,9 @@ train: &train
    roll: true
    warmup_step: 1
    max_step: 4
-   tgt_len: 29
-   mem_len: 23
-   eval_tgt_len: 29
+   tgt_len: 9
+   mem_len: 7
+   eval_tgt_len: 9
    batch_size: 31
    multi_gpu: ddp
    log_interval: 1
