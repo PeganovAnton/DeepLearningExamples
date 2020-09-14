@@ -232,7 +232,7 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
     def forward(self, w, r, r_w_bias, r_r_bias, 
                 attn_mask=None, mems=None, prepended_out=None):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
-
+        print("rlen:", rlen)
         cat = w if mems is None else torch.cat([mems, w], dim=0)
         cat = cat if prepended_out is None \
             else torch.cat([prepended_out, cat], dim=0)
@@ -271,10 +271,11 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             rr_head_q_prepended = None if prepended_out is None else w_head_q_prepended + r_r_bias
             len_of_keys_for_prepended = prepended_out.size(0) + mems.size(0)
             r_head_k_for_tgt = r_head_k[len_of_keys_for_prepended:]
-            
+        print("rr_head_q.shape:", rr_head_q.shape, "r_head_k_for_tgt.shape:", r_head_k_for_tgt.shape)
         BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k_for_tgt))     # bsz x n_head x qlen x klen
         BD = self._rel_shift(BD)
         if prepended_out is not None:
+            print("prepended_out is not None")
             r_head_k_for_prepended_forward = r_head_k[:len_of_keys_for_prepended]
             r_head_k_for_prepended_backward = r_head_k[-prepended_out.size(0):]
             BD_prepended_forward = torch.einsum(
@@ -290,6 +291,7 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             BD = torch.cat((BD_prepended, BD), dim=2)
 
         # [bsz x n_head x qlen x klen]
+        print(AC.shape, BD.shape)
         attn_score = AC + BD
         attn_score.mul_(self.scale)
 
@@ -705,14 +707,17 @@ class MemTransformerLM(nn.Module):
 
         mlen = mems[0].size(0) if mems is not None else 0
         klen = mlen + qlen
+        prepended_tokens_len = 0 if prepended_tokens is None \
+            else prepended_tokens.size(0)
         dec_attn_mask = torch.triu(
-            word_emb.new_ones(qlen, klen+self.num_prepended_tokens),
-            diagonal=1+mlen+self.num_prepended_tokens
+            word_emb.new_ones(qlen, klen + prepended_tokens_len),
+            diagonal=1 + mlen + prepended_tokens_len
         ).bool()
         prepended_query_mask = torch.cat(
             (
-                word_emb.new_zeros(self.num_prepended_tokens, self.num_prepended_tokens + mlen),
-                word_emb.new_ones(self.num_prepended_tokens, qlen)
+                word_emb.new_zeros(
+                    prepended_tokens_len, prepended_tokens_len + mlen),
+                word_emb.new_ones(prepended_tokens_len, qlen)
             ),
             dim=1
         ).bool()
@@ -721,14 +726,19 @@ class MemTransformerLM(nn.Module):
         hids = []
         # default
         if self.attn_type == 0:
+            print("mems.shape:", mems.shape)
+            if prepended_tokens_len == 0:
+                prepended_tokens_pos_len = 0
+            else:
+                prepended_tokens_pos_len = prepended_tokens_len * 2 \
+                    + mems.size(1)
             pos_seq = torch.arange(
-                klen-1
-                    +self.num_prepended_tokens
-                    +(self.num_prepended_tokens+mems.size(0)),
+                klen - 1 + prepended_tokens_pos_len,
                 -1,
                 -1.0,
                 device=word_emb.device,
                 dtype=word_emb.dtype)
+            print("pos_seq:", pos_seq)
             if self.clamp_len > 0:
                 pos_seq.clamp_(max=self.clamp_len)
             pos_emb = self.pos_emb(pos_seq)
@@ -747,7 +757,7 @@ class MemTransformerLM(nn.Module):
                                  mems=mems_i, prepended_out=prepended_out)
                 if prepended_out is not None and prepended_out.size(0) > 0:
                     prepended_out = core_out[:self.prepended_out.size(0)]
-                core_out = core_out[self.num_prepended_tokens:]
+                core_out = core_out[prepended_tokens_len:]
                 hids.append(core_out.detach())
         # learnable
         elif self.attn_type == 1:
@@ -817,6 +827,7 @@ class MemTransformerLM(nn.Module):
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
+        print("(forward)data.shape:", data.shape)
         if mems is None:
             mems = self.init_mems()
 
@@ -841,10 +852,15 @@ class MemTransformerLM(nn.Module):
             loss = loss.view(tgt_len, -1)
 
         if self.num_prepended_tokens is not None \
-                and self.num_prependeed_tokens > 0:
+                and self.num_prepended_tokens > 0:
             if self.cached_input_tokens is None:
                 self.cached_input_tokens = data
             else:
+                print(
+                    "self.cached_input_tokens.shape:", 
+                    self.cached_input_tokens.shape, 
+                    "data.shape:", 
+                    data.shape)
                 self.cached_input_tokens = torch.cat(
                     (self.cached_input_tokens, data), dim=0)
             self.cached_input_tokens = self.cached_input_tokens[

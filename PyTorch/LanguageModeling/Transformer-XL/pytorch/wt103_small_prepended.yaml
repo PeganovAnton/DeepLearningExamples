@@ -6,7 +6,7 @@ wt103: &wt103
 train: &train
    <<: *wt103
    cuda: true
-   num_prepnended_tokens: 17
+   num_prepended_tokens: 17
    n_layer: 4
    d_model: 27
    n_head: 7
