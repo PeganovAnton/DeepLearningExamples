@@ -719,7 +719,9 @@ class MemTransformerLM(nn.Module):
             dim=1
         ).bool()
         dec_attn_mask = torch.cat((prepended_query_mask, dec_attn_mask), dim=0)
-        print("(MemTransformerLM._forward)dec_attn_mask:", dec_attn_mask)
+        torch.set_printoptions(linewidth=1000)
+        print("(MemTransformerLM._forward)dec_attn_mask.shape:", dec_attn_mask.shape)
+        print("(MemTransformerLM._forward)dec_attn_mask:", dec_attn_mask.byte())
         hids = []
         # default
         if self.attn_type == 0:
