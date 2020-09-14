@@ -218,6 +218,21 @@ class RelMultiHeadAttn(nn.Module):
 
         return x
 
+    def _rel_shift_forward(self, x, zero_tril=False):
+        zero_pad = torch.zeros((x.size(0), x.size(1), x.size(2), 1),
+                               device=x.device, dtype=x.dtype)
+        x_padded = torch.cat([zero_pad, x], dim=3)
+
+        x_padded = x_padded.view(x.size(0), x.size(1), x.size(3) + 1, x.size(2))
+
+        x = x_padded.narrow(2, 0, x_padded.size(2) - 1).view_as(x)
+
+        if zero_tril:
+            ones = torch.ones((x.size(2), x.size(3)))
+            x = x * torch.triu(ones, 1)[None, None, :, :]
+
+        return x
+
     def forward(self, w, r, attn_mask=None, mems=None):
         raise NotImplementedError
 
@@ -232,6 +247,8 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
     def forward(self, w, r, r_w_bias, r_r_bias, 
                 attn_mask=None, mems=None, prepended_out=None):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
+        prepended_size = 0 if prepended_out is None else prepended_out.size(0)
+        
         cat = w if mems is None else torch.cat([mems, w], dim=0)
         cat = cat if prepended_out is None \
             else torch.cat([prepended_out, cat], dim=0)
@@ -241,19 +258,22 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
         w_head_q, w_head_k, w_head_v = torch.chunk(w_heads, 3, dim=-1)
         w_head_q_prepended = None if prepended_out is None \
             else w_head_q[:prepended_out.size(0)]
-        w_head_q = w_head_q[-qlen:]
+        w_head_q_tgt = w_head_q[-qlen:]
         if prepended_out is not None and prepended_out.size(0) > 0:
-            w_head_q = torch.cat(
-                (w_head_q[:prepended_out.size(0)], w_head_q), dim=0)
-
+            w_head_q = torch.cat((w_head_q_prepended, w_head_q_tgt), dim=0)
+        else:
+            w_head_q = w_head_q_tgt
 
         klen = w_head_k.size(0)
 
         w_head_q = w_head_q.view(
-            qlen+(0 if prepended_out is None else prepended_out.size(0)),
-            bsz,
-            self.n_head,
-            self.d_head)  # qlen x bsz x n_head x d_head
+            qlen + prepended_size, bsz, self.n_head, self.d_head)  # qlen x bsz x n_head x d_head
+        if prepended_out is not None:
+            w_head_q_prepended = w_head_q_prepended.view(
+                prepended_size, bsz, self.n_head, self.d_head)
+        w_head_q_tgt = w_head_q_tgt.view(
+            qlen, bsz, self.n_head, self.d_head)
+      
         w_head_k = w_head_k.view(klen, bsz, self.n_head, self.d_head)  # klen x bsz x n_head x d_head
         w_head_v = w_head_v.view(klen, bsz, self.n_head, self.d_head)  # klen x bsz x n_head x d_head
 
@@ -261,9 +281,8 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         # compute attention score
         rw_head_q = w_head_q + r_w_bias                                # qlen x bsz x n_head x d_head
-        AC = torch.einsum('ibnd,jbnd->bnij', (rw_head_q, w_head_k))    # bsz x n_head x qlen x klen
-
-        rr_head_q = w_head_q + r_r_bias
+        AC = torch.einsum('ibnd,jbnd->bnij', (rw_head_q, w_head_k))    # bsz x n_head x qlen x klenp
+        rr_head_q = w_head_q_tgt + r_r_bias
         if prepended_out is None:
             r_head_k_for_tgt = r_head_k
         else:
@@ -272,24 +291,37 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             r_head_k_for_tgt = r_head_k[len_of_keys_for_prepended:]
         BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k_for_tgt))     # bsz x n_head x qlen x klen
         BD = self._rel_shift(BD)
+        # print("(RelPartialLearnableMultiHeadAttn.forward)BD[0,0]:", BD[0,0])
+           
         if prepended_out is not None:
-            print("prepended_out is not None")
+            torch.set_printoptions(precision=0, linewidth=3000, threshold=3000)
             r_head_k_for_prepended_forward = r_head_k[:len_of_keys_for_prepended]
             r_head_k_for_prepended_backward = r_head_k[-prepended_out.size(0):]
             BD_prepended_forward = torch.einsum(
                 'ibnd,jnd->bnij', (rr_head_q_prepended, r_head_k_for_prepended_forward))
-            BD_prepended_forward = self._res_shift_forward(BD_prepended_forward)
+            BD_prepended_forward = self._rel_shift_forward(BD_prepended_forward)
             BD_prepended_forward.triu_(1)
             BD_prepended_backward = torch.einsum(
                 'ibnd,jnd->bnij', (rr_head_q_prepended, r_head_k_for_prepended_backward))
-            BD_prepended_backward = self.rel_shift(BD_prepended_backward)
-            BD_prepended_backward.tril_(1)
-            BD_prepended = BD_prepended_backward
-            BD_prepended += BD_prepended_forward
+            BD_prepended_backward = self._rel_shift(BD_prepended_backward)
+            BD_prepended_backward.tril_(-1)
+            sh = BD_prepended_backward.shape
+            BD_prepended_backward = torch.cat(
+                (
+                    BD_prepended_backward, 
+                    BD_prepended_backward.new_zeros(sh[:-1] + (mems.size(0),))
+                ), 
+                dim=3)
+            BD_prepended = torch.cat(
+                (
+                    BD_prepended_backward + BD_prepended_forward, 
+                    BD_prepended_backward.new_zeros(sh[:-1] + (qlen,))
+                ),
+                dim=3
+            )
             BD = torch.cat((BD_prepended, BD), dim=2)
 
         # [bsz x n_head x qlen x klen]
-        print(AC.shape, BD.shape)
         attn_score = AC + BD
         attn_score.mul_(self.scale)
 
@@ -314,13 +346,16 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
         # linear projection
         attn_out = self.o_net(attn_vec)
         attn_out = self.drop(attn_out)
-
+        if prepended_out is None or prepended_out.size(0) == 0:
+            skip_sum = w + attn_out
+        else:
+            skip_sum = torch.cat((prepended_out, w), dim=0) + attn_out
         if self.pre_lnorm:
             # residual connection
-            output = w + attn_out
+            output = skip_sum
         else:
             # residual connection + layer normalization
-            output = self.layer_norm(w + attn_out)
+            output = self.layer_norm(skip_sum)
 
         return output
 
@@ -699,13 +734,14 @@ class MemTransformerLM(nn.Module):
         qlen, bsz = dec_inp.size()
 
         word_emb = self.word_emb(dec_inp)
-        prepended_emb = None if prepended_tokens is None \
-            else self.word_emb(prepended_tokens)
+        prepended_emb = \
+            None if prepended_tokens is None or prepended_tokens.size(0)== 0 \
+                else self.word_emb(prepended_tokens)
 
         mlen = mems[0].size(0) if mems is not None else 0
         klen = mlen + qlen
-        prepended_tokens_len = 0 if prepended_tokens is None \
-            else prepended_tokens.size(0)
+        prepended_tokens_len = 0 if prepended_emb is None \
+            else prepended_emb.size(0)
         dec_attn_mask = torch.triu(
             word_emb.new_ones(qlen, klen + prepended_tokens_len),
             diagonal=1 + mlen + prepended_tokens_len
@@ -719,13 +755,13 @@ class MemTransformerLM(nn.Module):
             dim=1
         ).bool()
         dec_attn_mask = torch.cat((prepended_query_mask, dec_attn_mask), dim=0)
-        torch.set_printoptions(linewidth=1000, threshold=10000)
-        print("(MemTransformerLM._forward)dec_attn_mask.shape:", dec_attn_mask.shape)
-        print("(MemTransformerLM._forward)dec_attn_mask:", dec_attn_mask.byte())
+        # torch.set_printoptions(linewidth=1000, threshold=10000)
+        # print("(MemTransformerLM._forward)dec_attn_mask.shape:", dec_attn_mask.shape)
+        # print("(MemTransformerLM._forward)dec_attn_mask:", dec_attn_mask.byte())
         hids = []
         # default
         if self.attn_type == 0:
-            print("mems.shape:", mems.shape)
+            # print("mems.shape:", mems.shape)
             if prepended_tokens_len == 0:
                 prepended_tokens_pos_len = 0
             else:
@@ -752,8 +788,8 @@ class MemTransformerLM(nn.Module):
                 core_out = layer(core_out, pos_emb, self.r_w_bias,
                                  self.r_r_bias, dec_attn_mask=dec_attn_mask,
                                  mems=mems_i, prepended_out=prepended_out)
-                if prepended_out is not None and prepended_out.size(0) > 0:
-                    prepended_out = core_out[:self.prepended_out.size(0)]
+                if prepended_tokens_len > 0:
+                    prepended_out = core_out[:prepended_tokens_len]
                 core_out = core_out[prepended_tokens_len:]
                 hids.append(core_out.detach())
         # learnable
@@ -824,7 +860,7 @@ class MemTransformerLM(nn.Module):
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
-        print("(forward)data.shape:", data.shape)
+        # print("(forward)data.shape:", data.shape)
         if mems is None:
             mems = self.init_mems()
 
@@ -856,9 +892,9 @@ class MemTransformerLM(nn.Module):
                 cached_input_tokens = torch.cat(
                     (cached_input_tokens, data), dim=0)
             cached_input_tokens = cached_input_tokens[
-                -self.num_prepended_tokens-mems.size(0):]
-        print("(MemTransformerLM.forward)cached_input_tokens.shape:",
-              cached_input_tokens.shape)
+                -self.num_prepended_tokens-self.mem_len:]
+        # print("(MemTransformerLM.forward)cached_input_tokens.shape:",
+        #       cached_input_tokens.shape)
         return (loss, new_mems, cached_input_tokens)
 
 

@@ -5,28 +5,28 @@ wt103: &wt103
 
 train: &train
    <<: *wt103
+   num_prepended_tokens: 32
    cuda: true
-   num_prepended_tokens: 4
-   n_layer: 4
-   d_model: 13
-   n_head: 7
-   d_head: 9
-   d_inner: 33
+   n_layer: 16
+   d_model: 512
+   n_head: 8
+   d_head: 64
+   d_inner: 2048
    dropout: 0.1
    dropatt: 0.0
    optim: jitlamb
    lr: 0.01
    eta_min: 0.001
    roll: true
-   warmup_step: 1
-   max_step: 4
-   tgt_len: 9
-   mem_len: 7
-   eval_tgt_len: 9
-   batch_size: 31
+   warmup_step: 1000
+   max_step: 40000
+   tgt_len: 192
+   mem_len: 224
+   eval_tgt_len: 192
+   batch_size: 256
    multi_gpu: ddp
-   log_interval: 5
-   eval_interval: 5
+   log_interval: 10
+   eval_interval: 5000
    vocab: word
    adaptive: true
 
