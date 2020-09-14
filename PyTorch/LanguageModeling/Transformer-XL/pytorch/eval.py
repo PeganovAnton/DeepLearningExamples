@@ -170,6 +170,7 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
     start_time = time.time()
     with torch.no_grad():
         mems = None
+        cached_input_tokens = None
         for _ in range(repeat):
             for idx, (data, target, seq_len, warm) in enumerate(eval_iter):
                 if max_size and idx >= max_size:
@@ -178,7 +179,7 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
 
                 torch.cuda.synchronize()
                 start_iter = time.time()
-                loss, mems = model(data, target, mems)
+                loss, mems, cached_input_tokens = model(data, target, mems, cached_input_tokens)
                 torch.cuda.synchronize()
                 elapsed = time.time() - start_iter
 
@@ -245,8 +246,9 @@ def compile_model(model, device, args):
     start = time.time()
     with torch.no_grad():
         mems = None
+        cached_input_tokens = None
         for _ in range(2):
-            _, mems = model(inp, tgt, mems)
+            _, mems, cached_input_tokens = model(inp, tgt, mems, cached_input_tokens)
     torch.cuda.synchronize()
     stop = time.time()
     logging.info(f'Building the model took {stop - start:.2f} seconds')

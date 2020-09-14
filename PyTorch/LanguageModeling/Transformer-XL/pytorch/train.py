@@ -396,10 +396,11 @@ def evaluate(eval_iter, model, args):
     total_len, total_loss = 0, 0.
     with torch.no_grad():
         mems = None
+        cached_input_tokens = None
         for i, (data, target, seq_len, warm) in enumerate(eval_iter):
             if args.eval_max_steps > 0 and i >= args.eval_max_steps:
                 break
-            loss, mems = model(data, target, mems)
+            loss, mems, cached_input_tokens = model(data, target, mems, cached_input_tokens)
             loss = loss.float().mean()
             if warm:
                 assert (mems is None) or mems.size(1) == model.mem_len
@@ -429,6 +430,7 @@ def train(tr_iter, va_iter, model, para_model, model_config, optimizer,
     log_start_time = time.time()
 
     mems = [None for _ in range(args.batch_chunk)]
+    cached_input_tokens = [None for _ in range(args.batch_chunk)]
     if args.varlen:
         train_iter = tr_iter.get_varlen_iter(start=last_iter)
     else:
@@ -447,7 +449,8 @@ def train(tr_iter, va_iter, model, para_model, model_config, optimizer,
         for i in range(args.batch_chunk):
             data_i = data_chunks[i].contiguous()
             target_i = target_chunks[i].contiguous()
-            loss, mems[i] = para_model(data_i, target_i, mems[i])
+            loss, mems[i], cached_input_tokens[i] = para_model(
+                data_i, target_i, mems[i], cached_input_tokens[i])
             loss = loss.float().mean().type_as(loss) / args.batch_chunk
 
             if args.fp16:

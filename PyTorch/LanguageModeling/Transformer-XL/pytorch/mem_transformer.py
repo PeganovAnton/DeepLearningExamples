@@ -558,7 +558,6 @@ class MemTransformerLM(nn.Module):
         self.d_head = d_head
 
         self.num_prepended_tokens = num_prepended_tokens
-        self.cached_input_tokens = None
 
         self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
                                           div_val=div_val)
@@ -822,7 +821,7 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems
 
-    def forward(self, data, target, mems):
+    def forward(self, data, target, mems, cached_input_tokens):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
@@ -832,9 +831,9 @@ class MemTransformerLM(nn.Module):
             mems = self.init_mems()
 
         tgt_len = target.size(0)
-        if self.cached_input_tokens is not None \
-                and self.cached_input_tokens.shape[0] > self.mem_len:
-            prepended_tokens = self.cached_input_tokens[:-self.mem_len]
+        if cached_input_tokens is not None \
+                and cached_input_tokens.shape[0] > self.mem_len:
+            prepended_tokens = cached_input_tokens[:-self.mem_len]
         else:
             prepended_tokens = None
 
@@ -853,20 +852,20 @@ class MemTransformerLM(nn.Module):
 
         if self.num_prepended_tokens is not None \
                 and self.num_prepended_tokens > 0:
-            if self.cached_input_tokens is None:
-                self.cached_input_tokens = data
+            if cached_input_tokens is None:
+                cached_input_tokens = data
             else:
                 print(
-                    "self.cached_input_tokens.shape:", 
-                    self.cached_input_tokens.shape, 
+                    "cached_input_tokens.shape:", 
+                    cached_input_tokens.shape, 
                     "data.shape:", 
                     data.shape)
-                self.cached_input_tokens = torch.cat(
-                    (self.cached_input_tokens, data), dim=0)
-            self.cached_input_tokens = self.cached_input_tokens[
+                cached_input_tokens = torch.cat(
+                    (cached_input_tokens, data), dim=0)
+            cached_input_tokens = cached_input_tokens[
                 -self.num_prepended_tokens-mems.size(0):]
 
-        return (loss, new_mems)
+        return (loss, new_mems, cached_input_tokens)
 
 
 if __name__ == '__main__':
