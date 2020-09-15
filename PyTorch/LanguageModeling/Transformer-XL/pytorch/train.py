@@ -115,6 +115,9 @@ def parse_args():
                          help='Type of vocabulary')
 
     model = parser.add_argument_group('model setup')
+    model.add_argument('--num_mem_tokens', type=int, default=0,
+                       help="Number of memory tokens with fixed positional "
+                            "embeddings")
     model.add_argument('--n_layer', type=int, default=16,
                        help='Number of total layers')
     model.add_argument('--n_head', type=int, default=8,
@@ -695,6 +698,7 @@ def main():
     # Build the model
     ###########################################################################
     model_config = {
+        'num_mem_tokens': args.num_mem_tokens,
         'n_token': ntokens,
         'n_layer': args.n_layer,
         'n_head': args.n_head,

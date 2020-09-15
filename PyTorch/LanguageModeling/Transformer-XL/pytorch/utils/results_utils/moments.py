@@ -33,7 +33,7 @@ def main():
         aggregated = aggregated.append(df.iloc[[args.row_index]])
     aggregated = aggregated.select_dtypes(include=["number"])
     mean = aggregated.mean(axis=0)
-    std = aggregated.std(axis=0)
+    std = aggregated.std(axis=0, ddof=1)
     moments_df = pd.DataFrame({"mean": mean, "std": std})
     moments_df.to_csv(args.output)
 
