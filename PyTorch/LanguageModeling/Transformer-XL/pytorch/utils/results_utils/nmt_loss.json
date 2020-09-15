@@ -1,0 +1,8 @@
+{
+  "x": "num_mem_tokens",
+  "y": "test_loss",
+  "xlabel": "number of mem-tokens",
+  "ylabel": "test loss",
+  "grid": "both",
+  "xscale": "log"
+}
