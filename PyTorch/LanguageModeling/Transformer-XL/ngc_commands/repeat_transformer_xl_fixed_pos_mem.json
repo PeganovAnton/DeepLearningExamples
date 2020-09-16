@@ -3,7 +3,7 @@
    "aceName": "nv-us-west-2",
    "command": "git clone https://github.com/PeganovAnton/DeepLearningExamples.git && cd DeepLearningExamples && git checkout mem_tokens_with_fixed_position && source PyTorch/LanguageModeling/Transformer-XL/ngc_commands/repeat_transformer_xl_fixed_pos_mem.sh",
    "dockerImageName": "nvidia/pytorch:20.03-py3",
-   "name": "original-transformer-xl-from-nvidia",
+   "name": "fixed_pos_mem_tokens",
    "publishedContainerPorts": [
      6006
    ],
