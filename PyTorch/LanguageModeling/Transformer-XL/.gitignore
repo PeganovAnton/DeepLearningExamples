@@ -7,3 +7,4 @@ results/
 pytorch/debug_repeated_tokens_result/
 pytorch/LM-TFM/
 ngc_results/
+*.swp
