@@ -272,8 +272,21 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
         rr_head_q = w_head_q + r_r_bias
         BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k))     # bsz x n_head x qlen x klen
         if num_mem_tokens is not None and num_mem_tokens > 0:
-            no_mem = self._rel_shift(BD[:-num_mem_tokens, :-num_mem_tokens])
-            ab = torch.cat((no_mem, BD[:-num_mem_tokens, -num_mem_tokens:]), dim=1)
+            cached_no_mem = BD[:-num_mem_tokens, :mems.size(0)-num_mem_tokens]
+            cached_mem_tokens = BD[:-num_mem_tokens, mems.size(0)-num_mem_tokens:mems.size(1)]
+            no_mem_inputs = BD[:-num_mem_tokens, mems.size(0):BD.size(1)-num_mem_tokens]
+            no_mem_shifted = self._rel_shift(torch.cat((cached_no_mem, no_mem_inputs), dim=1))
+            cached_no_mem_shifted = no_mem_shifted[:, :cached_no_mem.size(1)]
+            no_mem_inputs_shifted = no_mem_shifted[:, -no_mem_inputs.size(1):]
+            ab = torch.cat(
+                (
+                    cached_no_mem_shifted,
+                    cached_mem_tokens,
+                    no_mem_inputs_shifted,
+                    BD[:, BD.size(1)-num_mem_tokens]
+                ),
+                dim=1
+            )
             BD = torch.cat((ab, BD[-num_mem_tokens:, :]), dim=0)
         # [bsz x n_head x qlen x klen]
         attn_score = AC + BD
@@ -744,6 +757,15 @@ class MemTransformerLM(nn.Module):
                 -1.0, 
                 device=word_emb.device,
                 dtype=word_emb.dtype)
+            pos_seq = torch.cat(
+                (
+                    pos_seq[:self.mem_len],
+                    pos_seq[pos_seq.size(0)-2*self.num_mem_tokens:pos_seq.size(0)-self.num_mem_tokens],
+                    pos_seq[self.mem_len:pos_seq.size(0)-2*self.num_mem_tokens],
+                    pos_seq[pos_seq.size(0)-self.num_mem_tokens:]
+                ),
+                dim=0
+            )
             if self.clamp_len > 0:
                 pos_seq.clamp_(max=self.clamp_len)
             pos_emb = self.pos_emb(pos_seq)
