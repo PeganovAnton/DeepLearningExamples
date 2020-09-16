@@ -237,7 +237,9 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             mems=None, 
             num_mem_tokens=None):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
-
+        mlen = mems.size(0)
+        mlen_no_mem_tokens = 0 if mlen ==0 else max(0, mlen-num_mem_tokens)
+        num_cached_mem_tokens = min(mlen, num_mem_tokens)
         if mems is not None:
             cat = torch.cat([mems, w], 0)
             if self.pre_lnorm:
@@ -271,23 +273,34 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         rr_head_q = w_head_q + r_r_bias
         BD = torch.einsum('ibnd,jnd->bnij', (rr_head_q, r_head_k))     # bsz x n_head x qlen x klen
+        # print("(RelPartialLearnableMultiHeadAttn.forward)BD.shape:", BD.shape)
         if num_mem_tokens is not None and num_mem_tokens > 0:
-            cached_no_mem = BD[:-num_mem_tokens, :mems.size(0)-num_mem_tokens]
-            cached_mem_tokens = BD[:-num_mem_tokens, mems.size(0)-num_mem_tokens:mems.size(1)]
-            no_mem_inputs = BD[:-num_mem_tokens, mems.size(0):BD.size(1)-num_mem_tokens]
-            no_mem_shifted = self._rel_shift(torch.cat((cached_no_mem, no_mem_inputs), dim=1))
-            cached_no_mem_shifted = no_mem_shifted[:, :cached_no_mem.size(1)]
-            no_mem_inputs_shifted = no_mem_shifted[:, -no_mem_inputs.size(1):]
+            cached_no_mem = BD[
+                ..., :BD.size(-2)-num_mem_tokens, :mlen_no_mem_tokens]
+            cached_mem_tokens = BD[
+                ..., 
+                :BD.size(-2)-num_mem_tokens, 
+                mlen_no_mem_tokens : mlen_no_mem_tokens+num_cached_mem_tokens]
+            no_mem_inputs = BD[
+                ..., :BD.size(-2)-num_mem_tokens, mlen:BD.size(-1)-num_mem_tokens]
+            no_mem_shifted = self._rel_shift(torch.cat((cached_no_mem, no_mem_inputs), dim=-1))
+            cached_no_mem_shifted = no_mem_shifted[..., :cached_no_mem.size(-1)]
+            no_mem_inputs_shifted = no_mem_shifted[..., -no_mem_inputs.size(-1):]
+            # print("(RelPartialLearnableMultiHeadAttn.forward)\n"
+            #       "cached_no_mem_shifted.shape:", cached_no_mem_shifted.shape,
+            #       "\ncached_mem_tokens.shape:", cached_mem_tokens.shape,
+            #       "\nno_mem_inputs_shifted.shape:", no_mem_inputs_shifted.shape,
+            #       "\nBD[..., :BD.size(-2)-num_mem_tokens, BD.size(-1)-num_mem_tokens:].shape:", BD[..., :BD.size(-2)-num_mem_tokens, BD.size(-1)-num_mem_tokens:].shape)
             ab = torch.cat(
                 (
                     cached_no_mem_shifted,
                     cached_mem_tokens,
                     no_mem_inputs_shifted,
-                    BD[:, BD.size(1)-num_mem_tokens]
+                    BD[..., :BD.size(-2)-num_mem_tokens, BD.size(-1)-num_mem_tokens:]
                 ),
-                dim=1
+                dim=-1
             )
-            BD = torch.cat((ab, BD[-num_mem_tokens:, :]), dim=0)
+            BD = torch.cat((ab, BD[..., -num_mem_tokens:, :]), dim=-2)
         # [bsz x n_head x qlen x klen]
         attn_score = AC + BD
         attn_score.mul_(self.scale)
@@ -757,15 +770,20 @@ class MemTransformerLM(nn.Module):
                 -1.0, 
                 device=word_emb.device,
                 dtype=word_emb.dtype)
+            mlen_no_mem_tokens = max(mlen - self.num_mem_tokens, 0)
+            num_cached_mem_tokens = min(mlen, self.num_mem_tokens)
             pos_seq = torch.cat(
                 (
-                    pos_seq[:self.mem_len],
-                    pos_seq[pos_seq.size(0)-2*self.num_mem_tokens:pos_seq.size(0)-self.num_mem_tokens],
-                    pos_seq[self.mem_len:pos_seq.size(0)-2*self.num_mem_tokens],
+                    pos_seq[:mlen_no_mem_tokens],
+                    pos_seq[
+                        -self.num_mem_tokens-num_cached_mem_tokens
+                            :-self.num_mem_tokens],
+                    pos_seq[mlen_no_mem_tokens:mlen_no_mem_tokens+qlen],
                     pos_seq[pos_seq.size(0)-self.num_mem_tokens:]
                 ),
                 dim=0
             )
+            # print("(MemTransformerLM.forward_)pos_seq.shape:", pos_seq.shape)
             if self.clamp_len > 0:
                 pos_seq.clamp_(max=self.clamp_len)
             pos_emb = self.pos_emb(pos_seq)
