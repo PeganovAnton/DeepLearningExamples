@@ -439,12 +439,12 @@ class RelPartialLearnableDecoderLayer(nn.Module):
 
     def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None):
 
-        output = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
+        output, attn = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
                                attn_mask=dec_attn_mask,
                                mems=mems)
         output = self.pos_ff(output)
 
-        return output
+        return output, attn
 
 
 class AdaptiveEmbedding(nn.Module):
