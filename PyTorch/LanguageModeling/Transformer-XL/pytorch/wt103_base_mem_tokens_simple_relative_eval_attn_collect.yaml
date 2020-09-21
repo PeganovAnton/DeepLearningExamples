@@ -2,6 +2,7 @@
 wt103: &wt103
    dataset: wt103
    data: ../data/wikitext-103/
+   work_dir: ../ngc_results/
 
 train: &train
    <<: *wt103

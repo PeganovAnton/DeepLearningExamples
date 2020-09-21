@@ -14,7 +14,7 @@ cd PyTorch/LanguageModeling/Transformer-XL \
   && for i in {1..5}; do
        bash run_wt103_base_mem_tokens_simple_relative.sh train 8 \
          --config dgx1_8gpu_fp16 \
-         --work_dir result/repeat${i} \
+         --work_dir /result/repeat${i} \
          --seed ${i}
      done
 

@@ -278,10 +278,10 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         # [bsz x n_head x qlen x klen]
         attn_prob = F.softmax(attn_score, dim=3)
-        attn_prob = self.dropatt(attn_prob)
+        attn_prob_drop = self.dropatt(attn_prob)
 
         # compute attention vector
-        attn_vec = torch.einsum('bnij,jbnd->ibnd', (attn_prob, w_head_v))
+        attn_vec = torch.einsum('bnij,jbnd->ibnd', (attn_prob_drop, w_head_v))
 
         # [qlen x bsz x n_head x d_head]
         attn_vec = attn_vec.contiguous().view(
@@ -298,7 +298,7 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             # residual connection + layer normalization
             output = self.layer_norm(w + attn_out)
 
-        return output
+        return output, attn_prob
 
 
 class RelLearnableMultiHeadAttn(RelMultiHeadAttn):
@@ -701,14 +701,17 @@ class MemTransformerLM(nn.Module):
             pos_emb = self.drop(pos_emb)
 
             hids.append(core_out.detach())
+            attn_by_layers = []
             for i, layer in enumerate(self.layers):
                 mems_i = None if mems is None else mems[i]
-                core_out = layer(core_out, pos_emb, self.r_w_bias,
-                                 self.r_r_bias, dec_attn_mask=dec_attn_mask,
-                                 mems=mems_i)
+                core_out, attn = layer(
+                    core_out, pos_emb, self.r_w_bias, self.r_r_bias,
+                    dec_attn_mask=dec_attn_mask, mems=mems_i)
                 hids.append(core_out.detach())
+                attn_by_layers.append(attn)
         # learnable
         elif self.attn_type == 1:
+            raise NotImplementedError()
             core_out = self.drop(word_emb)
             hids.append(core_out.detach())
             for i, layer in enumerate(self.layers):
@@ -724,6 +727,7 @@ class MemTransformerLM(nn.Module):
                 hids.append(core_out.detach())
         # absolute
         elif self.attn_type == 2:
+            raise NotImplementedError()
             pos_seq = torch.arange(klen - 1, -1, -1.0, device=word_emb.device,
                                    dtype=word_emb.dtype)
             if self.clamp_len > 0:
@@ -741,6 +745,7 @@ class MemTransformerLM(nn.Module):
                                  mems=mems_i)
                 hids.append(core_out.detach())
         elif self.attn_type == 3:
+            raise NotImplementedError()
             core_out = self.drop(word_emb)
 
             hids.append(core_out.detach())
@@ -764,7 +769,7 @@ class MemTransformerLM(nn.Module):
 
         new_mems = self._update_mems(hids, mems, qlen, mlen)
 
-        return core_out, new_mems
+        return core_out, new_mems, torch.stack(attn_by_layers)
 
     def forward(self, data, target, mems):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
@@ -783,7 +788,7 @@ class MemTransformerLM(nn.Module):
             mems = self.init_mems()
 
         tgt_len = target.size(0)
-        hidden, new_mems = self._forward(data, mems=mems)
+        hidden, new_mems, attn = self._forward(data, mems=mems)
 
         pred_hid = hidden[-tgt_len:]
         if self.sample_softmax > 0 and self.training:
@@ -795,7 +800,7 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 
-        return loss, new_mems
+        return loss, new_mems, attn
 
 
 if __name__ == '__main__':

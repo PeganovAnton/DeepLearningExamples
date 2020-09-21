@@ -403,7 +403,7 @@ def evaluate(eval_iter, model, args):
         for i, (data, target, seq_len, warm) in enumerate(eval_iter):
             if args.eval_max_steps > 0 and i >= args.eval_max_steps:
                 break
-            loss, mems = model(data, target, mems)
+            loss, mems, _ = model(data, target, mems)
             loss = loss.float().mean()
             if warm:
                 assert (mems is None) or mems.size(1) == model.mem_len
@@ -451,7 +451,7 @@ def train(tr_iter, va_iter, model, para_model, model_config, optimizer,
         for i in range(args.batch_chunk):
             data_i = data_chunks[i].contiguous()
             target_i = target_chunks[i].contiguous()
-            loss, mems[i] = para_model(data_i, target_i, mems[i])
+            loss, mems[i], _ = para_model(data_i, target_i, mems[i])
             loss = loss.float().mean().type_as(loss) / args.batch_chunk
 
             if args.fp16:
