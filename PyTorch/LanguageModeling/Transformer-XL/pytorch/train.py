@@ -380,7 +380,6 @@ def update_dropatt(m, args):
 def evaluate(eval_iter, model, args):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-
     # If the model does not use memory at all, make the ext_len longer.
     # Otherwise, make the mem_len longer and keep the ext_len the same.
     if args.mem_len == 0:

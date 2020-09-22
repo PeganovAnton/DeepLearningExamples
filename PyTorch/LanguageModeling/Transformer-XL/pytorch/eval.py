@@ -63,6 +63,8 @@ def parse_args():
     parser.add_argument('--steps_to_save_attn',
                         nargs="+",
                         type=int)
+    parser.add_argument('--num_mem_tokens', type=int, help="Number of mem"
+                        " tokens in network")
     parser.add_argument('--work_dir', default='LM-TFM', type=str,
                         help='experiment directory')
     parser.add_argument('--debug', action='store_true',
@@ -164,6 +166,7 @@ def format_log(loss, split, args):
 
 def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
     path = Path(path) / Path("step" + str(eval_step))
+    path = path.expanduser()
     path.mkdir(parents=True, exist_ok=True)
     attn_path = path / Path("attn.npy")
     queries_path = path / Path("queries.npy")
@@ -183,7 +186,6 @@ def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
         keys = queries
     queries = np.array(queries)
     keys = np.array(keys)
-    print("(save_attn)keys.shape:", keys.shape)
     queries = queries.transpose((0, 1))
     keys = keys.transpose((0, 1))
     with attn_path.open('wb') as f:
@@ -200,7 +202,6 @@ def evaluate(
         vocab=None, attn_save_path=None):
     total_len, total_loss = 0, 0.
     eval_step = 0
-
     log_throughput = 0
     log_latency = 0
     log_loss = 0
@@ -303,7 +304,6 @@ def main():
     utils.gpu_affinity.set_affinity(args.local_rank)
 
     if args.type == 'pytorch':
-        print("correct import")
         from mem_transformer import MemTransformerLM
     else:
         from inference.mem_transformer_jit import MemTransformerLM
@@ -359,7 +359,6 @@ def main():
     else:
         checkpoint = None
         vocab_type = args.manual_vocab
-
     if args.manual:
         vocab = checkpoint['vocab']
 
@@ -401,7 +400,9 @@ def main():
         checkpoint['model_config']['clamp_len'] = args.clamp_len
         checkpoint['model_config']['same_length'] = args.same_length
         checkpoint['model_config']['dtype'] = dtype
-
+        checkpoint['model_config']['num_mem_tokens'] = \
+            args.num_mem_tokens if args.num_mem_tokens is not None \
+            else checkpoint['model_config'].get('num_mem_tokens')
         model = MemTransformerLM(**checkpoint['model_config'])
         if args.type == 'pytorch':
             model.load_state_dict(checkpoint['model_state'])
@@ -413,6 +414,7 @@ def main():
         args.manual_config['mem_len'] = args.mem_len
         args.manual_config['clamp_len'] = args.clamp_len
         args.manual_config['same_length'] = args.same_length
+        args.manual_config['num_mem_tokens'] = args.num_mem_tokens
         args.manual_config['dtype'] = dtype
 
         model = MemTransformerLM(**args.manual_config)

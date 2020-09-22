@@ -17,7 +17,7 @@
 if [[ "$1" == 'train' ]]; then
     echo 'Run training...'
     python -m torch.distributed.launch --nproc_per_node="$2" train.py \
-        --config_file debug_wt103_base_mem_tokens_simple_relative.yaml \
+        --config_file debug_wt103_base_mem_tokens_simple_relative.yaml \ 
         "${@:3}"
 elif [[ "$1" == 'eval' ]]; then
     echo 'Run evaluation...'
