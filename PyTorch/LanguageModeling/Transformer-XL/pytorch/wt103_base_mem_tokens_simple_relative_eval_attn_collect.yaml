@@ -44,8 +44,8 @@ eval: &eval
       - 6
    tgt_len: 192
    mem_len: 224
-   clamp_len: 448
-   same_length: true
+   clamp_len: -1
+   same_length: false
    split: test
 
 default:
