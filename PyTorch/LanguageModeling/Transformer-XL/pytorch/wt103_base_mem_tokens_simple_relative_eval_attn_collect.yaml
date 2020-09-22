@@ -35,9 +35,10 @@ eval: &eval
    <<: *wt103
    cuda: true
    attn_save_path: ../ngc_results/
+   steps_to_save_attn: 1 2 3 4 5 6
    tgt_len: 192
    mem_len: 224
-   clamp_len: 416
+   clamp_len: 448
    same_length: true
    split: test
 
