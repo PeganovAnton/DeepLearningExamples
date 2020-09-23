@@ -145,6 +145,7 @@ def parse_args():
     assert args.ext_len >= 0, 'extended context length must be non-negative'
     if args.seed == -1:
         args.seed = None
+    args.work_dir = os.path.expanduser(args.work_dir)
     return args
 
 

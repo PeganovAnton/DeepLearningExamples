@@ -252,6 +252,7 @@ def parse_args():
     if args.seed == -1:
         args.seed = None
     print("args.work_dir:", args.work_dir)
+    args.work_dir = os.path.expanduser(args.work_dir)
     return args
 
 

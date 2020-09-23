@@ -443,11 +443,12 @@ class RelPartialLearnableDecoderLayer(nn.Module):
                                      pre_lnorm=kwargs.get('pre_lnorm'))
 
     def forward(self, dec_inp, r, r_w_bias, r_r_bias,
-                dec_attn_mask=None, mems=None, zero_attn_mem_tokens=False, num_mem_tokens=None):
+                dec_attn_mask=None, mems=None, zero_attn_to_mem_tokens=False, 
+                num_mem_tokens=None):
 
         output, attn = self.dec_attn(
             dec_inp, r, r_w_bias, r_r_bias, attn_mask=dec_attn_mask,
-            mems=mems, zero_attn_mem_tokens=zero_attn_mem_tokens,
+            mems=mems, zero_attn_to_mem_tokens=zero_attn_to_mem_tokens,
             num_mem_tokens=num_mem_tokens)
         output = self.pos_ff(output)
 
