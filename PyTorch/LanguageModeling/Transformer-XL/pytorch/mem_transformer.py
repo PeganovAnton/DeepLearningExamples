@@ -692,7 +692,7 @@ class MemTransformerLM(nn.Module):
         # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
         # to `mlen + qlen - self.ext_len`.
         with torch.no_grad():
-            end_idx = mlen + max(0, qlen - 0 - self.ext_len)
+            end_idx = mlen + max(0, qlen - 0 - self.ext_len + self.num_mem_tokens)
             beg_idx = max(0, end_idx - self.mem_len)
             stacked = torch.stack(hids)
             if mems.numel():
