@@ -2,7 +2,7 @@
 wt103: &wt103
    dataset: wt103
    data: ../data/wikitext-103/
-   work_dir: ../ngc_results/
+   work_dir: ~/DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_results/simple_mem_tokens_with_relative_positional_embeddings/repeat_base_mem32/attn/1469262/repeat1
 
 train: &train
    <<: *wt103
@@ -34,7 +34,7 @@ train: &train
 eval: &eval
    <<: *wt103
    cuda: true
-   attn_save_path: ../ngc_results/
+   attn_save_path: ~/DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_results/simple_mem_tokens_with_relative_positional_embeddings/repeat_base_mem32/attn/1469262/repeat1
    steps_to_save_attn: 
       - 1 
       - 2 
