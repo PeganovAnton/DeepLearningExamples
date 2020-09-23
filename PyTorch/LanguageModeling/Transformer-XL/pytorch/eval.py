@@ -57,7 +57,7 @@ def parse_args():
             config = yaml.load(f, Loader=yaml.FullLoader)[config_args.config]['eval']
     else:
         config = {}
-
+    parser.add_argument('--zero_attn_to_mem_tokens', action="store_true")
     parser.add_argument('--work_dir', default='LM-TFM', type=str,
                         help='experiment directory')
     parser.add_argument('--debug', action='store_true',
@@ -135,6 +135,7 @@ def parse_args():
         args.batch_size = 1
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
+    args.work_dir = os.path.expanduser(args.work_dir)
     return args
 
 
@@ -351,6 +352,8 @@ def main():
         checkpoint['model_config']['clamp_len'] = args.clamp_len
         checkpoint['model_config']['same_length'] = args.same_length
         checkpoint['model_config']['dtype'] = dtype
+        checkpoint['model_config']['zero_attn_to_mem_tokens'] = \
+            args.zero_attn_to_mem_tokens
 
         model = MemTransformerLM(**checkpoint['model_config'])
         if args.type == 'pytorch':
@@ -364,6 +367,7 @@ def main():
         args.manual_config['clamp_len'] = args.clamp_len
         args.manual_config['same_length'] = args.same_length
         args.manual_config['dtype'] = dtype
+        args.manual_config['zero_attn_to_mem_tokens'] = args.zero_attn_to_mem_tokens
 
         model = MemTransformerLM(**args.manual_config)
 

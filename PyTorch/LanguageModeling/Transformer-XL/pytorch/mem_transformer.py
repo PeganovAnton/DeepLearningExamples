@@ -235,7 +235,9 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             r_r_bias, 
             attn_mask=None, 
             mems=None, 
-            num_mem_tokens=None):
+            num_mem_tokens=None,
+            zero_attn_to_mem_tokens=False
+    ):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
         mlen = mems.size(0)
         mlen_no_mem_tokens = 0 if mlen ==0 else max(0, mlen-num_mem_tokens)
@@ -314,10 +316,13 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         # [bsz x n_head x qlen x klen]
         attn_prob = F.softmax(attn_score, dim=3)
-        attn_prob = self.dropatt(attn_prob)
+        if zero_attn_to_mem_tokens:
+            attn_prob[..., -num_mem_tokens:] = 0.
+            attn_prob[..., -qlen-num_mem_tokens:-qlen] = 0.
+        attn_prob_drop = self.dropatt(attn_prob)
 
         # compute attention vector
-        attn_vec = torch.einsum('bnij,jbnd->ibnd', (attn_prob, w_head_v))
+        attn_vec = torch.einsum('bnij,jbnd->ibnd', (attn_prob_drop, w_head_v))
 
         # [qlen x bsz x n_head x d_head]
         attn_vec = attn_vec.contiguous().view(
@@ -473,11 +478,14 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         self.pos_ff = PositionwiseFF(d_model, d_inner, dropout,
                                      pre_lnorm=kwargs.get('pre_lnorm'))
 
-    def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None, num_mem_tokens=None):
+    def forward(
+            self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None,
+            mems=None, num_mem_tokens=None, zero_attn_to_mem_tokens=False):
 
         output = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
                                attn_mask=dec_attn_mask,
-                               mems=mems, num_mem_tokens=num_mem_tokens)
+                               mems=mems, num_mem_tokens=num_mem_tokens,
+                               zero_attn_to_mem_tokens=zero_attn_to_mem_tokens)
         output = self.pos_ff(output)
 
         return output
@@ -553,7 +561,7 @@ class MemTransformerLM(nn.Module):
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
                  same_length=False, attn_type=0, clamp_len=-1,
-                 sample_softmax=-1, num_mem_tokens=0):
+                 sample_softmax=-1, num_mem_tokens=0, zero_attn_to_mem_tokens=False):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
 
@@ -582,6 +590,8 @@ class MemTransformerLM(nn.Module):
         self.max_klen = tgt_len + ext_len + mem_len
 
         self.attn_type = attn_type
+
+        self.zero_attn_to_mem_tokens = zero_attn_to_mem_tokens
 
         self.layers = nn.ModuleList()
         # the default attention
@@ -796,7 +806,9 @@ class MemTransformerLM(nn.Module):
                 core_out = layer(
                     core_out, pos_emb, self.r_w_bias, self.r_r_bias, 
                     dec_attn_mask=dec_attn_mask, mems=mems_i, 
-                    num_mem_tokens=self.num_mem_tokens)
+                    num_mem_tokens=self.num_mem_tokens,
+                    zero_attn_to_mem_tokens=self.zero_attn_to_mem_tokens
+                )
 
                 hids.append(core_out.detach())
         # learnable

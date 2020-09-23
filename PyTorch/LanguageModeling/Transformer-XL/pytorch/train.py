@@ -249,7 +249,7 @@ def parse_args():
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
     assert args.batch_size % args.batch_chunk == 0
-
+    args.work_dir = os.path.expanduser(args.work_dir)
     return args
 
 
