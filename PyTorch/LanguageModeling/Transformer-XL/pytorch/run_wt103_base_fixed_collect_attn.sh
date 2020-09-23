@@ -17,12 +17,12 @@
 if [[ "$1" == 'train' ]]; then
     echo 'Run training...'
     python -m torch.distributed.launch --nproc_per_node="$2" train.py \
-        --config_file debug_wt103_base_mem_tokens_simple_relative.yaml \ 
+        --config_file wt103_base_fixed_collect_attn.yaml \
         "${@:3}"
 elif [[ "$1" == 'eval' ]]; then
     echo 'Run evaluation...'
     python -m torch.distributed.launch --nproc_per_node="$2" eval.py \
-        --config_file debug_wt103_base_mem_tokens_simple_relative.yaml \
+        --config_file wt103_base_fixed_collect_attn.yaml \
         "${@:3}"
 else
     echo 'unknown argment 1'

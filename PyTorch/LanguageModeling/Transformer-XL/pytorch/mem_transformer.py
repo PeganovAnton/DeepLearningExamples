@@ -339,7 +339,7 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
             # residual connection + layer normalization
             output = self.layer_norm(w + attn_out)
 
-        return output
+        return output, attn_prob
 
 
 class RelLearnableMultiHeadAttn(RelMultiHeadAttn):
@@ -482,13 +482,13 @@ class RelPartialLearnableDecoderLayer(nn.Module):
             self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None,
             mems=None, num_mem_tokens=None, zero_attn_to_mem_tokens=False):
 
-        output = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
+        output, attn = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
                                attn_mask=dec_attn_mask,
                                mems=mems, num_mem_tokens=num_mem_tokens,
                                zero_attn_to_mem_tokens=zero_attn_to_mem_tokens)
         output = self.pos_ff(output)
 
-        return output
+        return output, attn
 
 
 class AdaptiveEmbedding(nn.Module):
@@ -702,7 +702,7 @@ class MemTransformerLM(nn.Module):
         # the tokens from `mlen + qlen - self.ext_len - self.mem_len`
         # to `mlen + qlen - self.ext_len`.
         with torch.no_grad():
-            end_idx = mlen + max(0, qlen - 0 - self.ext_len)
+            end_idx = mlen + max(0, qlen - 0 - self.ext_len + self.num_mem_tokens)
             beg_idx = max(0, end_idx - self.mem_len)
             stacked = torch.stack(hids)
             if mems.numel():
@@ -801,15 +801,16 @@ class MemTransformerLM(nn.Module):
             pos_emb = self.drop(pos_emb)
 
             hids.append(core_out.detach())
+            attn_by_layers = []
             for i, layer in enumerate(self.layers):
                 mems_i = None if mems is None else mems[i]
-                core_out = layer(
+                core_out, attn = layer(
                     core_out, pos_emb, self.r_w_bias, self.r_r_bias, 
                     dec_attn_mask=dec_attn_mask, mems=mems_i, 
                     num_mem_tokens=self.num_mem_tokens,
                     zero_attn_to_mem_tokens=self.zero_attn_to_mem_tokens
                 )
-
+                attn_by_layers.append(attn)
                 hids.append(core_out.detach())
         # learnable
         elif self.attn_type == 1:
@@ -872,7 +873,11 @@ class MemTransformerLM(nn.Module):
 
         new_mems = self._update_mems(hids, mems, qlen, mlen)
 
-        return core_out[:core_out.size(0)-self.num_mem_tokens], new_mems
+        return (
+            core_out[:core_out.size(0)-self.num_mem_tokens],
+            new_mems,
+            torch.stack(attn_by_layers)
+        )
 
     def forward(self, data, target, mems):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
@@ -887,7 +892,7 @@ class MemTransformerLM(nn.Module):
             mems = self.init_mems()
 
         tgt_len = target.size(0)
-        hidden, new_mems = self._forward(
+        hidden, new_mems, attn = self._forward(
             data, mems=mems, mem_tokens=mem_tokens)
 
         pred_hid = hidden[-tgt_len:]
@@ -902,7 +907,7 @@ class MemTransformerLM(nn.Module):
             loss = self.crit(pred_hid, target)
             loss = loss.view(tgt_len, -1)
 
-        return (loss, new_mems)
+        return (loss, new_mems, attn)
 
 
 if __name__ == '__main__':

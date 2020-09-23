@@ -2,46 +2,48 @@
 wt103: &wt103
    dataset: wt103
    data: ../data/wikitext-103/
+   work_dir: ../ngc_results/fixed_pos_emb_mem_fp32/attn/1455276/repeat1
 
 train: &train
    <<: *wt103
    cuda: true
    num_mem_tokens: 32
-   n_layer: 6
-   d_model: 64
-   n_head: 4
-   d_head: 16
-   d_inner: 24
+   n_layer: 16
+   d_model: 512
+   n_head: 8
+   d_head: 64
+   d_inner: 2048
    dropout: 0.1
    dropatt: 0.0
    optim: jitlamb
    lr: 0.01
    eta_min: 0.001
    roll: true
-   warmup_step: 100
-   max_step: 400
+   warmup_step: 1000
+   max_step: 40000
    tgt_len: 192
    mem_len: 224
    eval_tgt_len: 192
    batch_size: 256
    multi_gpu: ddp
-   log_interval: 100
+   log_interval: 10
    eval_interval: 5000
    vocab: word
    adaptive: true
 
 eval: &eval
    <<: *wt103
-   steps_to_save_attn:
-      - 1
-      - 2
-      - 3
-      - 4
-      - 5
+   steps_to_save_attn: 
+      - 1 
+      - 2 
+      - 3 
+      - 4 
+      - 5 
       - 6
-   attn_save_path: debug_repeated_tokens_result 
+   attn_save_path: ~/DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_results/fixed_pos_emb_mem_fp32/attn/1455276
    cuda: true
    tgt_len: 192
+   num_mem_tokens: 32
    mem_len: 224
    clamp_len: -1
    same_length: false
