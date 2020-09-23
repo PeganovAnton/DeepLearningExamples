@@ -1,0 +1,8 @@
+{
+  "x": "num_mem_tokens",
+  "y": "test_perplexity",
+  "xlabel": "number of mem-tokens",
+  "ylabel": "test perplexity",
+  "grid": "both",
+  "xscale": "log"
+}
