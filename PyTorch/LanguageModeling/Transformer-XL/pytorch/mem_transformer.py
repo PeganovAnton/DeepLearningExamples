@@ -227,7 +227,9 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         self.r_net = nn.Linear(self.d_model, self.n_head * self.d_head, bias=False)
 
-    def forward(self, w, r, r_w_bias, r_r_bias, attn_mask=None, mems=None):
+    def forward(
+            self, w, r, r_w_bias, r_r_bias, attn_mask=None,
+            mems=None, zero_attn_to_mem_tokens=False, num_mem_tokens=None):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
 
         if mems is not None:
@@ -278,6 +280,9 @@ class RelPartialLearnableMultiHeadAttn(RelMultiHeadAttn):
 
         # [bsz x n_head x qlen x klen]
         attn_prob = F.softmax(attn_score, dim=3)
+        if zero_attn_to_mem_tokens:
+            attn_prob[..., :num_mem_tokens] = 0.
+            attn_prob[..., -qlen:-qlen+num_mem_tokens] = 0.
         attn_prob_drop = self.dropatt(attn_prob)
 
         # compute attention vector
@@ -437,11 +442,13 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         self.pos_ff = PositionwiseFF(d_model, d_inner, dropout,
                                      pre_lnorm=kwargs.get('pre_lnorm'))
 
-    def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None):
+    def forward(self, dec_inp, r, r_w_bias, r_r_bias,
+                dec_attn_mask=None, mems=None, zero_attn_mem_tokens=False, num_mem_tokens=None):
 
-        output, attn = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
-                               attn_mask=dec_attn_mask,
-                               mems=mems)
+        output, attn = self.dec_attn(
+            dec_inp, r, r_w_bias, r_r_bias, attn_mask=dec_attn_mask,
+            mems=mems, zero_attn_mem_tokens=zero_attn_mem_tokens,
+            num_mem_tokens=num_mem_tokens)
         output = self.pos_ff(output)
 
         return output, attn
@@ -517,7 +524,7 @@ class MemTransformerLM(nn.Module):
                  tgt_len=None, ext_len=None, mem_len=None,
                  cutoffs=[], adapt_inp=False,
                  same_length=False, attn_type=0, clamp_len=-1,
-                 sample_softmax=-1):
+                 sample_softmax=-1, zero_attn_to_mem_tokens=False):
         print("(MemTransformerLM.__init__)mem_len, num_mem_tokens:", mem_len, num_mem_tokens)
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
@@ -577,6 +584,7 @@ class MemTransformerLM(nn.Module):
                 )
 
         self.sample_softmax = sample_softmax
+        self.zero_attn_to_mem_tokens = zero_attn_to_mem_tokens
         # use sampled softmax
         if sample_softmax > 0:
             self.out_layer = nn.Linear(d_model, n_token)
@@ -706,7 +714,10 @@ class MemTransformerLM(nn.Module):
                 mems_i = None if mems is None else mems[i]
                 core_out, attn = layer(
                     core_out, pos_emb, self.r_w_bias, self.r_r_bias,
-                    dec_attn_mask=dec_attn_mask, mems=mems_i)
+                    dec_attn_mask=dec_attn_mask, mems=mems_i,
+                    zero_attn_to_mem_tokens=self.zero_attn_to_mem_tokens,
+                    num_mem_tokens=self.num_mem_tokens
+                )
                 hids.append(core_out.detach())
                 attn_by_layers.append(attn)
         # learnable
