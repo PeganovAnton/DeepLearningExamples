@@ -47,11 +47,9 @@ def plot_attention_weights(attentions, queries, keys, layer, filename=Path('att.
 
 
 def plot_all_attention_maps(data_path, save_path, batch_elem_idx, steps):
-    save_path = save_path.expanduser()
-    save_path.mkdir(parents=True, exist_ok=True)
-    data = get_attn(data_path)
-    sh = data['attn'].shape
     for step in steps:
+        data = get_attn(data_path / Path(f'step{step}'))
+        sh = data['attn'].shape
         for li in range(sh[0]):
             plot_attention_weights(
                 data['attn'][:, batch_elem_idx, ...],
@@ -67,11 +65,13 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "data_path",
+        type=Path,
         help="Path to dir with directories 'step1', 'step2' and so on, each which"
              "in turn contain files 'attn.npy', 'queries.npy', 'keys.npy'."
     )
     parser.add_argument(
         "save_path",
+        type=Path,
         help="Path to directory where plots will be saved."
     )
     parser.add_argument(
