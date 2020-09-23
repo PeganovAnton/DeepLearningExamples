@@ -1,0 +1,1 @@
+bash run_wt103_base_mem_tokens_simple_relative_collect_attn.sh eval 1

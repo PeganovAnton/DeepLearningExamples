@@ -148,7 +148,7 @@ def parse_args():
 def load_checkpoint(path):
     dst = f'cuda:{torch.cuda.current_device()}'
     logging.info(f'Loading checkpoint from {path}')
-    checkpoint = torch.load(path, map_location=dst)
+    checkpoint = torch.load(Path(path).expanduser(), map_location=dst)
     return checkpoint
 
 
@@ -163,7 +163,8 @@ def format_log(loss, split, args):
 
 
 def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
-    path = Path(path) / Path("step" + str(eval_step))
+    path = (Path(path) / Path("step" + str(eval_step))).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
     attn_path = path / Path("attn.npy")
     queries_path = path / Path("queries.npy")
     key_path = path / Path("keys.npy")
@@ -172,15 +173,18 @@ def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
     for i in range(data.shape[1]):
         queries.append(
             ['<MEM>'] * num_mem_tokens + vocab.get_symbols(data[:, i]))
-    for i in range(old_data.shape[1]):
-        keys.append(
-            ['<MEM>'] * num_mem_tokens
-            + vocab.get_symbols(old_data[:, i])
-            + keys[i])
+    if old_data is None:
+        keys = queries
+    else:
+        for i in range(old_data.shape[1]):
+            keys.append(
+                ['<MEM>'] * num_mem_tokens
+                + vocab.get_symbols(old_data[:, i])
+                + queries[i])
     queries = np.array(queries).transpose((0, 1))
     keys = np.array(keys).transpose((0, 1))
     with attn_path.open('wb') as f:
-        np.save(f, attn)
+        np.save(f, attn.cpu().numpy())
     with queries_path.open('wb') as f:
         np.save(f, queries)
     with key_path.open('wb') as f:
@@ -473,7 +477,7 @@ def main():
         args.log_interval,
         args.max_size,
         args.repeat,
-        vocab=vocab,
+        vocab=corpus.vocab,
         attn_save_path=args.attn_save_path,
         steps_to_save_attn=args.steps_to_save_attn
     )
