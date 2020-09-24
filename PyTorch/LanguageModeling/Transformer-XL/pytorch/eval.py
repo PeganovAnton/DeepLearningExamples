@@ -182,8 +182,8 @@ def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
         for i in range(old_data.shape[1]):
             keys.append(
                 vocab.get_symbols(old_data[:, i])
-                + queries[i]
-                + ['<MEM>'] * num_mem_tokens)
+                + ['<MEM>'] * num_mem_tokens 
+                + queries[i])
     else:
         keys = queries
     queries = np.array(queries)
