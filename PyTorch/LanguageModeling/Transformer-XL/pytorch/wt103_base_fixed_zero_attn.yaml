@@ -2,7 +2,7 @@
 wt103: &wt103
    dataset: wt103
    data: ../data/wikitext-103/
-   work_dir: ../ngc_results/fixed_pos_emb_mem/attn/1471392/repeat1
+   work_dir: ../ngc_results/fixed_pos_emb_mem/1471392/repeat1
 
 train: &train
    <<: *wt103

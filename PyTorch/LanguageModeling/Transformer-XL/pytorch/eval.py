@@ -222,11 +222,12 @@ def evaluate(
                 torch.cuda.synchronize()
                 start_iter = time.time()
                 loss, mems, attn = model(data, target, mems)
-                if eval_step in steps_to_save_attn:
-                    save_attn(
-                        attn, eval_step, data,
-                        old_data, model.num_mem_tokens,
-                        vocab, attn_save_path)
+                if steps_to_save_attn is not None:
+                    if eval_step in steps_to_save_attn:
+                        save_attn(
+                            attn, eval_step, data,
+                            old_data, model.num_mem_tokens,
+                            vocab, attn_save_path)
                 old_data = data
                 torch.cuda.synchronize()
                 elapsed = time.time() - start_iter

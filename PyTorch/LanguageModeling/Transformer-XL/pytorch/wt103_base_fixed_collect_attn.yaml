@@ -2,7 +2,7 @@
 wt103: &wt103
    dataset: wt103
    data: ../data/wikitext-103/
-   work_dir: ../ngc_results/fixed_pos_emb_mem_fp32/attn/1455276/repeat1
+   work_dir: ../ngc_results/fixed_pos_emb_mem/1471392/repeat1
 
 train: &train
    <<: *wt103
@@ -40,7 +40,7 @@ eval: &eval
       - 4 
       - 5 
       - 6
-   attn_save_path: ~/DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_results/fixed_pos_emb_mem_fp32/attn/1455276
+   attn_save_path: ~/DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL/ngc_results/fixed_pos_emb_mem/1471392
    cuda: true
    tgt_len: 192
    num_mem_tokens: 32
