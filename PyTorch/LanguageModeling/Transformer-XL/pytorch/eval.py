@@ -20,6 +20,7 @@ import os
 import pickle
 import sys
 import time
+from pathlib import Path
 
 import dllogger
 import numpy as np
@@ -57,7 +58,11 @@ def parse_args():
             config = yaml.load(f, Loader=yaml.FullLoader)[config_args.config]['eval']
     else:
         config = {}
-
+    parser.add_argument('--attn_save_path',
+                        help="Path where attention maps are saved.")
+    parser.add_argument('--steps_to_save_attn',
+                        nargs="+",
+                        type=int)
     parser.add_argument('--work_dir', default='LM-TFM', type=str,
                         help='experiment directory')
     parser.add_argument('--debug', action='store_true',
@@ -135,13 +140,16 @@ def parse_args():
         args.batch_size = 1
 
     assert args.ext_len >= 0, 'extended context length must be non-negative'
+    if args.seed == -1:
+        args.seed = None
+    args.work_dir = os.path.expanduser(args.work_dir)
     return args
 
 
 def load_checkpoint(path):
     dst = f'cuda:{torch.cuda.current_device()}'
     logging.info(f'Loading checkpoint from {path}')
-    checkpoint = torch.load(path, map_location=dst)
+    checkpoint = torch.load(Path(path).expanduser(), map_location=dst)
     return checkpoint
 
 
@@ -155,7 +163,37 @@ def format_log(loss, split, args):
     return log_str
 
 
-def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
+def save_attn(attn, eval_step, data, old_data, vocab, path):
+    path = (Path(path) / Path("step" + str(eval_step))).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    attn_path = path / Path("attn.npy")
+    queries_path = path / Path("queries.npy")
+    key_path = path / Path("keys.npy")
+    queries = []
+    keys = []
+    for i in range(data.shape[1]):
+        queries.append(vocab.get_symbols(data[:, i]))
+    if old_data is None:
+        keys = queries
+    else:
+        for i in range(old_data.shape[1]):
+            keys.append(
+                + vocab.get_symbols(old_data[:, i])
+                + queries[i])
+    queries = np.array(queries).transpose((0, 1))
+    keys = np.array(keys).transpose((0, 1))
+    with attn_path.open('wb') as f:
+        np.save(f, attn.cpu().numpy())
+    with queries_path.open('wb') as f:
+        np.save(f, queries)
+    with key_path.open('wb') as f:
+        np.save(f, keys)
+
+
+def evaluate(
+        eval_iter, model, meters, log_interval,
+        max_size=None, repeat=1, steps_to_save_attn=None,
+        vocab=None, attn_save_path=None):
     total_len, total_loss = 0, 0.
     eval_step = 0
 
@@ -167,6 +205,7 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
     start_time = time.time()
     with torch.no_grad():
         mems = None
+        old_data = None
         for _ in range(repeat):
             for idx, (data, target, seq_len, warm) in enumerate(eval_iter):
                 if max_size and idx >= max_size:
@@ -175,7 +214,13 @@ def evaluate(eval_iter, model, meters, log_interval, max_size=None, repeat=1):
 
                 torch.cuda.synchronize()
                 start_iter = time.time()
-                loss, mems = model(data, target, mems)
+                loss, mems, attn = model(data, target, mems)
+                if eval_step in steps_to_save_attn:
+                    save_attn(
+                        attn, eval_step, data,
+                        old_data,
+                        vocab, attn_save_path)
+                old_data = data
                 torch.cuda.synchronize()
                 elapsed = time.time() - start_iter
 
@@ -408,6 +453,7 @@ def main():
         model = torch.jit.script(model)
 
     if args.type != 'pytorch':
+        raise NotImplementedError()
         compile_model(model, device, args)
 
     if args.type == 'torchscript' and args.save_torchscript:
@@ -423,7 +469,17 @@ def main():
     meters['eval_throughput'] = AverageMeter(warmup=warmup, keep=args.save_data)
     meters['eval_latency'] = AverageMeter(warmup=warmup, keep=args.save_data)
 
-    loss = evaluate(iter, model, meters, args.log_interval, args.max_size, args.repeat)
+    loss = evaluate(
+        iter,
+        model,
+        meters,
+        args.log_interval,
+        args.max_size,
+        args.repeat,
+        vocab=corpus.vocab,
+        attn_save_path=args.attn_save_path,
+        steps_to_save_attn=args.steps_to_save_attn
+    )
     perplexity = math.exp(loss)
     log_str = format_log(loss, args.split, args)
 
