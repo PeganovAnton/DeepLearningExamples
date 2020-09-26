@@ -178,7 +178,7 @@ def save_attn(attn, eval_step, data, old_data, vocab, path):
     else:
         for i in range(old_data.shape[1]):
             keys.append(
-                + vocab.get_symbols(old_data[:, i])
+                vocab.get_symbols(old_data[:, i])
                 + queries[i])
     queries = np.array(queries).transpose((0, 1))
     keys = np.array(keys).transpose((0, 1))

@@ -439,12 +439,12 @@ class RelPartialLearnableDecoderLayer(nn.Module):
 
     def forward(self, dec_inp, r, r_w_bias, r_r_bias, dec_attn_mask=None, mems=None):
 
-        output, drop_attn = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
+        output, attn = self.dec_attn(dec_inp, r, r_w_bias, r_r_bias,
                                attn_mask=dec_attn_mask,
                                mems=mems)
         output = self.pos_ff(output)
 
-        return output
+        return output, attn
 
 
 class AdaptiveEmbedding(nn.Module):
@@ -705,7 +705,7 @@ class MemTransformerLM(nn.Module):
                     core_out, pos_emb, self.r_w_bias, self.r_r_bias, 
                     dec_attn_mask=dec_attn_mask, mems=mems_i)
                 hids.append(core_out.detach())
-                attn_by_layer.append(attn))
+                attn_by_layer.append(attn)
         # learnable
         elif self.attn_type == 1:
             raise NotImplementedError()
