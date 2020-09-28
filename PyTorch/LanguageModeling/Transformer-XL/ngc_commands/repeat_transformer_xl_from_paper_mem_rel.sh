@@ -1,4 +1,4 @@
-cd DeepLearningExamples/PyTorch/LanguageModeling/Transformer-XL \
+cd PyTorch/LanguageModeling/Transformer-XL \
   && pip install -r requirements.txt \
   && pip install --no-cache-dir git+https://github.com/NVIDIA/dllogger.git#egg=dllogger \
   && mkdir -p data \
