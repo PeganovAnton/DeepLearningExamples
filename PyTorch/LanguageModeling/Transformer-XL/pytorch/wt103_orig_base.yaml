@@ -14,15 +14,15 @@ train: &train
    dropout: 0.1
    dropatt: 0.0
    optim: jitlamb
-   lr: 0.01
+   lr: 0.00025
    eta_min: 0.001
    roll: true
-   warmup_step: 1000
-   max_step: 40000
+   warmup_step: 0
+   max_step: 200000
    tgt_len: 150
    mem_len: 150
    eval_tgt_len: 150
-   batch_size: 256
+   batch_size: 60
    multi_gpu: ddp
    log_interval: 10
    eval_interval: 5000
