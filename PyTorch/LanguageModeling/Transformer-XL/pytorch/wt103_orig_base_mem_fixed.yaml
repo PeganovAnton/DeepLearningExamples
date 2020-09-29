@@ -14,7 +14,7 @@ train: &train
    d_inner: 2100
    dropout: 0.1
    dropatt: 0.0
-   optim: jitlamb
+   optim: adam
    lr: 0.00025
    eta_min: 0.0
    roll: true
@@ -25,7 +25,7 @@ train: &train
    eval_tgt_len: 150
    batch_size: 60
    multi_gpu: ddp
-   log_interval: 10
+   log_interval: 200
    eval_interval: 5000
    vocab: word
    adaptive: true
