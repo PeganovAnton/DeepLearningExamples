@@ -573,8 +573,9 @@ class MemTransformerLM(nn.Module):
 
         self.num_mem_tokens = num_mem_tokens
 
-        self.word_emb = AdaptiveEmbedding(n_token+1, d_embed, d_model, cutoffs,
-                                          div_val=div_val)
+        self.word_emb = AdaptiveEmbedding(
+            n_token+self.num_mem_tokens, d_embed, d_model, cutoffs,
+            div_val=div_val)
 
         self.drop = nn.Dropout(dropout)
 
