@@ -538,8 +538,9 @@ class MemTransformerLM(nn.Module):
 
         self.num_mem_tokens = num_mem_tokens
 
-        self.word_emb = AdaptiveEmbedding(n_token+1, d_embed, d_model, cutoffs,
-                                          div_val=div_val)
+        self.word_emb = AdaptiveEmbedding(
+            n_token+self.num_mem_tokens, d_embed, d_model, cutoffs,
+            div_val=div_val)
 
         self.drop = nn.Dropout(dropout)
 
@@ -790,11 +791,12 @@ class MemTransformerLM(nn.Module):
         # them together.
         
         if self.num_mem_tokens > 0:
-            mem_tokens = torch.full(
-                (self.num_mem_tokens, data.shape[-1]), 
-                self.n_token, 
-                dtype=data.dtype, 
-                device=data.device)
+            mem_tokens = torch.arange(
+                start=self.n_tokens,
+                end=self.n_tokens+self.num_mem_tokens,
+                dtype=data.dtype,
+                device=data.device,
+            ).unsqueeze(1).repeat(1, data.shape[-1])
             data = torch.cat((mem_tokens, data), dim=0)
         if mems is None:
             mems = self.init_mems()
