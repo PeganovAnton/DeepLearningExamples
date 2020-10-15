@@ -7,7 +7,14 @@ import pandas as pd
 
 
 def get_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Parses json description file and creates 4 files: "
+                    "descr.json, train.csv, valid.csv, test.csv with "
+                    "description and results. These files are saved in the "
+                    "directory with input file. If you need to process "
+                    "several experiments with script use `find` util with "
+                    "`-exec` option."
+    )
     parser.add_argument(
         "input",
         help="Path to input logs file with experiment result"
@@ -30,8 +37,16 @@ def main():
     test_path = input_path.parent / Path('test.csv')
     train_df, valid_df, test_df = \
         pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    print(f"Processing file {input_path}")
     with input_path.open() as inp_f, descr_path.open('w') as descr_f:
-        params_line = next(inp_f)[5:]
+        try:
+            params_line = next(inp_f)[5:]
+        except StopIteration:
+            raise ValueError(
+                f"The file {input_path} is broken. The description line "
+                f"is missing. Processing of the file is interrupted."
+            )
+            exit()
         json.dump(json.loads(params_line), descr_f, indent=2)
         for line_i, line in enumerate(inp_f, 1):
             line = line[5:]
