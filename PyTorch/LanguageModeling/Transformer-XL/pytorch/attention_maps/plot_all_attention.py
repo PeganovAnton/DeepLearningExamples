@@ -66,8 +66,9 @@ def get_args():
     parser.add_argument(
         "data_path",
         type=Path,
-        help="Path to dir with directories 'step1', 'step2' and so on, each which"
-             "in turn contain files 'attn.npy', 'queries.npy', 'keys.npy'."
+        help="Path to dir with directories 'step1', 'step2' and so on, each "
+             "of which in turn contain files 'attn.npy', 'queries.npy', "
+             "'keys.npy'."
     )
     parser.add_argument(
         "save_path",
@@ -84,7 +85,8 @@ def get_args():
         "--steps",
         nargs="+",
         type=int,
-        help="List of indices of steps which will be plotted.",
+        help="List of indices of steps which will be plotted. The indexation "
+             "starts wtih 1. Default is `[1, 2, 3, 4, 5, 6]`",
         default=[1, 2, 3, 4, 5, 6]
     )
     args = parser.parse_args()
