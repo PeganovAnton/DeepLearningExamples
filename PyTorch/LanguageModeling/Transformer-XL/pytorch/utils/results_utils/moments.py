@@ -4,10 +4,7 @@ import pandas as pd
 
 
 def get_args():
-    parser = argparse.ArgumentParser(
-        description="Computes the first and the second moments for values in "
-                    "in row `row_index` from files `input_files`."
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "input_files",
         nargs="+",
@@ -17,8 +14,7 @@ def get_args():
         "--row_index",
         "-r",
         type=int,
-        help="Index of a row in DataFrame that will be taken for moments "
-             "computation. Inde starts with zero"
+        help="Index of a row which will be taken for moments computation"
     )
     parser.add_argument(
         "--output",
@@ -37,7 +33,7 @@ def main():
         aggregated = aggregated.append(df.iloc[[args.row_index]])
     aggregated = aggregated.select_dtypes(include=["number"])
     mean = aggregated.mean(axis=0)
-    std = aggregated.std(axis=0, ddof=1)
+    std = aggregated.std(axis=0)
     moments_df = pd.DataFrame({"mean": mean, "std": std})
     moments_df.to_csv(args.output)
 
