@@ -795,12 +795,13 @@ class MemTransformerLM(nn.Module):
             split_i = round(frac * i)
             split_size = split_i - prev_ge_split_i
             prev_ge_split_i = split_i
-            ge_splits.append(split_i)
+            ge_splits.append(split_size)
             ge_indices_in_concatenated += list(
                 range(concatenated_size, concatenated_size + split_size))
             concatenated_size += split_size
             le_indices_in_concatenated.append(concatenated_size)
             concatenated_size += 1
+        ge_splits.append(ge_len - prev_ge_split_i)
         if le_first:
             ge_indices_in_concatenated += list(range(concatenated_size, ge_len + le_len))
         else:
@@ -809,11 +810,11 @@ class MemTransformerLM(nn.Module):
 
     def calculate_mem_usual_tokens_positions(self, num_usual_tokens, num_mem_tokens):
         if num_usual_tokens >= num_mem_tokens:
-            mem_splits = list(range(1, num_mem_tokens))
+            mem_splits = [1] * num_mem_tokens
             usual_splits, usual_indices_in_concatenated, _ = self.get_even_merge_indices(
                 num_usual_tokens, num_mem_tokens)
         else:
-            usual_splits = list(range(1, num_usual_tokens))
+            usual_splits = [1] * num_usual_tokens
             mem_splits, _, usual_indices_in_concatenated = self.get_even_merge_indices(
                 num_mem_tokens, num_usual_tokens, le_first=False)
         return usual_splits, mem_splits, usual_indices_in_concatenated
