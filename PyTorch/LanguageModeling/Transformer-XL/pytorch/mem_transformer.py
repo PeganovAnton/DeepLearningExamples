@@ -783,26 +783,71 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems, torch.stack(attn_by_layers)
 
+    @staticmethod
+    def get_even_merge_indices(ge_len, le_len, le_first=True):
+        frac = ge_len / le_len
+        ge_splits = []
+        ge_indices_in_concatenated = []
+        le_indices_in_concatenated = [0] if le_first else []
+        concatenated_size = int(le_first)
+        prev_ge_split_i = 0
+        for i in range(1, le_len + int(not le_first)):
+            split_i = round(frac * i)
+            split_size = split_i - prev_ge_split_i
+            prev_ge_split_i = split_i
+            ge_splits.append(split_i)
+            ge_indices_in_concatenated += list(
+                range(concatenated_size, concatenated_size + split_size))
+            concatenated_size += split_size
+            le_indices_in_concatenated.append(concatenated_size)
+            concatenated_size += 1
+        if le_first:
+            ge_indices_in_concatenated += list(range(concatenated_size, ge_len + le_len))
+        else:
+            ge_splits.pop()
+        return ge_splits, ge_indices_in_concatenated, le_indices_in_concatenated
+
+    def calculate_mem_usual_tokens_positions(self, num_usual_tokens, num_mem_tokens):
+        if num_usual_tokens >= num_mem_tokens:
+            mem_splits = list(range(1, num_mem_tokens))
+            usual_splits, usual_indices_in_concatenated, _ = self.get_even_merge_indices(
+                num_usual_tokens, num_mem_tokens)
+        else:
+            usual_splits = list(range(1, num_usual_tokens))
+            mem_splits, _, usual_indices_in_concatenated = self.get_even_merge_indices(
+                num_mem_tokens, num_usual_tokens, le_first=False)
+        return usual_splits, mem_splits, usual_indices_in_concatenated
+
     def forward(self, data, target, mems):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
-        
         if self.num_mem_tokens > 0:
+            segment_splits, mem_splits, usual_indices_in_concatenated = self.calculate_mem_usual_tokens_positions(
+                data.shape[0], self.num_mem_tokens)
             mem_tokens = torch.full(
                 (self.num_mem_tokens, data.shape[-1]), 
                 self.n_token, 
                 dtype=data.dtype, 
                 device=data.device)
-            data = torch.cat((mem_tokens, data), dim=0)
+            splitted_mem_tokens = torch.split(mem_tokens, mem_splits)
+            splitted_segment = torch.split(data, segment_splits)
+            merged = []
+            assert len(splitted_mem_tokens) == len(splitted_segment)
+            for spl_mem, spl_seg in zip(splitted_mem_tokens, splitted_segment):
+                merged += [spl_mem, spl_seg]
+            data = torch.cat(merged, dim=0)
         if mems is None:
             mems = self.init_mems()
 
         tgt_len = target.size(0)
         hidden, new_mems, attn = self._forward(data, mems=mems)
 
-        pred_hid = hidden[-tgt_len:]
+        if self.num_mem_tokens > 0:
+            pred_hid = hidden[-tgt_len-self.num_mem_tokens:][usual_indices_in_concatenated]
+        else:
+            pred_hid = hidden[-tgt_len:]
         if self.sample_softmax > 0 and self.training:
             assert self.tie_weight
             logit = sample_logits(self.word_emb, self.out_layer.bias, target,
