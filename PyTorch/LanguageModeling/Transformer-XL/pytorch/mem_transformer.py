@@ -517,6 +517,43 @@ class AdaptiveEmbedding(nn.Module):
 
         return embed
 
+    
+def get_even_merge_indices(ge_len, le_len, le_first=True):
+    frac = ge_len / le_len
+    ge_splits = []
+    ge_indices_in_concatenated = []
+    le_indices_in_concatenated = [0] if le_first else []
+    concatenated_size = int(le_first)
+    prev_ge_split_i = 0
+    for i in range(1, le_len + int(not le_first)):
+        split_i = round(frac * i)
+        split_size = split_i - prev_ge_split_i
+        prev_ge_split_i = split_i
+        ge_splits.append(split_size)
+        ge_indices_in_concatenated += list(
+            range(concatenated_size, concatenated_size + split_size))
+        concatenated_size += split_size
+        le_indices_in_concatenated.append(concatenated_size)
+        concatenated_size += 1
+    ge_splits.append(ge_len - prev_ge_split_i)
+    if le_first:
+        ge_indices_in_concatenated += list(range(concatenated_size, ge_len + le_len))
+    else:
+        ge_splits.pop()
+    return ge_splits, ge_indices_in_concatenated, le_indices_in_concatenated
+
+
+def calculate_mem_usual_tokens_positions(num_usual_tokens, num_mem_tokens):
+    if num_usual_tokens >= num_mem_tokens:
+        mem_splits = [1] * num_mem_tokens
+        usual_splits, usual_indices_in_concatenated, _ = get_even_merge_indices(
+            num_usual_tokens, num_mem_tokens)
+    else:
+        usual_splits = [1] * num_usual_tokens
+        mem_splits, _, usual_indices_in_concatenated = get_even_merge_indices(
+            num_mem_tokens, num_usual_tokens, le_first=False)
+    return usual_splits, mem_splits, usual_indices_in_concatenated
+
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_layer, n_head, d_model, d_head, d_inner,
@@ -783,49 +820,13 @@ class MemTransformerLM(nn.Module):
 
         return core_out, new_mems, torch.stack(attn_by_layers)
 
-    @staticmethod
-    def get_even_merge_indices(ge_len, le_len, le_first=True):
-        frac = ge_len / le_len
-        ge_splits = []
-        ge_indices_in_concatenated = []
-        le_indices_in_concatenated = [0] if le_first else []
-        concatenated_size = int(le_first)
-        prev_ge_split_i = 0
-        for i in range(1, le_len + int(not le_first)):
-            split_i = round(frac * i)
-            split_size = split_i - prev_ge_split_i
-            prev_ge_split_i = split_i
-            ge_splits.append(split_size)
-            ge_indices_in_concatenated += list(
-                range(concatenated_size, concatenated_size + split_size))
-            concatenated_size += split_size
-            le_indices_in_concatenated.append(concatenated_size)
-            concatenated_size += 1
-        ge_splits.append(ge_len - prev_ge_split_i)
-        if le_first:
-            ge_indices_in_concatenated += list(range(concatenated_size, ge_len + le_len))
-        else:
-            ge_splits.pop()
-        return ge_splits, ge_indices_in_concatenated, le_indices_in_concatenated
-
-    def calculate_mem_usual_tokens_positions(self, num_usual_tokens, num_mem_tokens):
-        if num_usual_tokens >= num_mem_tokens:
-            mem_splits = [1] * num_mem_tokens
-            usual_splits, usual_indices_in_concatenated, _ = self.get_even_merge_indices(
-                num_usual_tokens, num_mem_tokens)
-        else:
-            usual_splits = [1] * num_usual_tokens
-            mem_splits, _, usual_indices_in_concatenated = self.get_even_merge_indices(
-                num_mem_tokens, num_usual_tokens, le_first=False)
-        return usual_splits, mem_splits, usual_indices_in_concatenated
-
     def forward(self, data, target, mems):
         # nn.DataParallel does not allow size(0) tensors to be broadcasted.
         # So, have to initialize size(0) mems inside the model forward.
         # Moreover, have to return new_mems to allow nn.DataParallel to piece
         # them together.
         if self.num_mem_tokens > 0:
-            segment_splits, mem_splits, usual_indices_in_concatenated = self.calculate_mem_usual_tokens_positions(
+            segment_splits, mem_splits, usual_indices_in_concatenated = calculate_mem_usual_tokens_positions(
                 data.shape[0], self.num_mem_tokens)
             mem_tokens = torch.full(
                 (self.num_mem_tokens, data.shape[-1]), 

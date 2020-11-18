@@ -31,6 +31,7 @@ import data_utils
 import utils
 from data_utils import get_lm_corpus
 from data_utils import tokenize_raw
+from mem_transformer import calculate_mem_usual_tokens_positions
 from utils.exp_utils import AverageMeter
 from utils.exp_utils import benchmark
 from utils.exp_utils import create_exp_dir
@@ -166,6 +167,21 @@ def format_log(loss, split, args):
     return log_str
 
 
+def sizes_to_sections(sizes):
+    ans = [sizes[0]]
+    for s in sizes[1:-1]:
+        ans.append(ans[-1] + s)
+    ans
+
+
+def cat_splits(mem_splits, usual_splits):
+    ans = []
+    for m, u in zip(mem_splits, usual_splits):
+        ans.append(m)
+        ans.append(u)
+    return np.concatenate(ans)
+
+
 def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
     path = (Path(path) / Path("step" + str(eval_step))).expanduser()
     path.mkdir(parents=True, exist_ok=True)
@@ -174,17 +190,25 @@ def save_attn(attn, eval_step, data, old_data, num_mem_tokens, vocab, path):
     key_path = path / Path("keys.npy")
     queries = []
     keys = []
+    num_usual_tokens = data.shape[0]
+    usual_sizes, mem_sizes, _ = calculate_mem_usual_tokens_positions(num_usual_tokens, num_mem_tokens)
+    usual_sections = sizes_to_sections(usual_sizes)
+    mem_sections = sizes_to_sections(mem_sizes)
+    mem_tokens = np.array(['<MEM>'] * num_mem_tokens)
+    mem_splits = np.split(mem_tokens, mem_sections)
     for i in range(data.shape[1]):
-        queries.append(
-            ['<MEM>'] * num_mem_tokens + vocab.get_symbols(data[:, i]))
+        usual_splits = np.split(data[:, i], usual_sections)
+        queries.append(cat_splits(mem_splits, usual_splits)
     if old_data is None:
         keys = queries
     else:
+        old_usual_sizes, old_mem_sizes, _ = calculate_mem_usual_tokens_positions(old_data.shape[0], num_mem_tokens)
+        old_usual_sections = sizes_to_sections(old_usual_sizes)
+        old_mem_sections = sizes_to_sections(old_mem_sizes)
+        old_mem_splits = np.split(mem_tokens, old_mem_sections)
         for i in range(old_data.shape[1]):
-            keys.append(
-                ['<MEM>'] * num_mem_tokens
-                + vocab.get_symbols(old_data[:, i])
-                + queries[i])
+            old_usual_splits = np.split(old_data[:, i], old_usual_sections)
+            keys.append(cat_splits(old_mem_splits, old_usual_splitsi) + queries[i])
     queries = np.array(queries).transpose((0, 1))
     keys = np.array(keys).transpose((0, 1))
     with attn_path.open('wb') as f:
